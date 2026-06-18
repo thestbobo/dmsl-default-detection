@@ -1,0 +1,158 @@
+===============================================================================
+ howto.txt  —  Credit-card default detection  (DSML Lab project, Summer 2026)
+ A plain-language guide to this repo. Read top to bottom the first time.
+===============================================================================
+
+-------------------------------------------------------------------------------
+1. WHAT THE ASSIGNMENT IS (in plain words)
+-------------------------------------------------------------------------------
+You are given data about 30,000 credit-card clients (their credit limit, some
+demographics, and 6 months of bill/payment history). For each client you must
+predict ONE yes/no thing:
+
+    "Will this client DEFAULT on next month's payment?"   0 = no, 1 = yes.
+
+You train on `development.csv` (which has the answer column) and then produce
+predictions for `evaluation.csv` (which does NOT). Those predictions are scored
+on a leaderboard.
+
+WHAT "GOOD" LOOKS LIKE — and why accuracy is a trap
+---------------------------------------------------
+The classes are imbalanced: about 78% of clients do NOT default. So a lazy model
+that always says "no default" is right ~78% of the time:
+
+    Accuracy of "always predict 0"  = 0.78     <-- looks great, is useless
+    Macro-F1 of "always predict 0"  ~ 0.44     <-- exposes that it never finds defaulters
+
+Macro-F1 averages the F1 score of BOTH classes equally, so you only score well if
+you also catch the minority "default" class. That is why this project is graded on
+**macro-F1**, and why we (a) report per-class precision/recall and (b) tune the
+decision threshold to maximise macro-F1 instead of blindly using 0.5.
+
+-------------------------------------------------------------------------------
+2. WHAT EVERY FILE / FOLDER IS
+-------------------------------------------------------------------------------
+main.py
+    The one entry point. Loads data, builds the pipeline, trains it FROM SCRATCH,
+    predicts the evaluation set, and writes submission.csv. Must run in <=150 s.
+
+src/config.py        Settings everyone shares: the random SEED (42), file paths,
+                     which columns are categorical vs numeric, and the helpers
+                     that robustly find the label/id columns.
+src/data.py          Reads the CSVs; splits features/target; pulls the eval ids.
+src/preprocessing.py Cleans the data and builds the transform (impute, scale,
+                     one-hot). This is where the undocumented codes are folded.
+src/models.py        Defines the candidate models AND the single "chosen" model
+                     that main.py uses. Edit tuned params here.
+src/evaluate.py      Cross-validation + metrics + confusion-matrix figures. This
+                     produces the numbers you put in the report.
+src/submission.py    Writes and validates the strict "Id,Predicted" CSV.
+
+experiments/tune_baseline.py
+                     Compares the 3 baselines and runs a small hyperparameter
+                     search. Tuning lives HERE, never in main.py (exam rule).
+notebooks/01_eda.ipynb
+                     Exploratory data analysis: class balance, distributions,
+                     the weird codes, missingness.
+data/raw/            Where the dataset goes (you download it). Gitignored.
+outputs/submissions/ submission.csv lands here. Gitignored.
+outputs/figures/     Saved plots (confusion matrices). Gitignored.
+report/              Placeholder + rules for the required IEEE report.
+CLAUDE.md            Short, structured context (for LLM tools / quick reference).
+requirements.txt     The Python dependencies (already installed in .venv).
+
+-------------------------------------------------------------------------------
+3. QUICKSTART (do this once)
+-------------------------------------------------------------------------------
+a) Download the data. Open the Drive link from the assignment:
+       https://drive.google.com/file/d/1N07AVjwrKL2fNJNBfSlDef2ynhR7nlTq/view
+   Unzip and drop these into data/raw/ :
+       development.csv   evaluation.csv   sample_submission.csv
+   (See data/raw/README.md. Do NOT commit these files.)
+
+b) Activate the provided environment:
+       source .venv/bin/activate
+
+c) Run the whole thing:
+       python main.py
+
+d) Your predictions appear at:
+       outputs/submissions/submission.csv     (header: Id,Predicted)
+   main.py also prints a summary: the chosen model, the tuned threshold, how many
+   rows were written, and the runtime.
+
+e) What numbers to expect (rough, fill in real values after your first run):
+       dummy   macro-F1 ~ 0.4x   (the floor — basically random)
+       logreg  macro-F1 ~ 0.5-0.6
+       hgb     macro-F1 ~ 0.6+   (the chosen model)
+   Get the exact figures with:  python experiments/tune_baseline.py
+
+-------------------------------------------------------------------------------
+4. UNDERSTANDING THE FEATURES (with examples)
+-------------------------------------------------------------------------------
+LIMIT_BAL   Credit limit in NT$.  e.g. 200000 = a NT$200,000 limit.
+SEX         1 = male, 2 = female.
+EDUCATION   1 = grad school, 2 = university, 3 = high school, 4 = other.
+            (Real data also has 0, 5, 6 -> we fold these into 4 = "other".)
+MARRIAGE    1 = married, 2 = single, 3 = other.
+            (Real data also has 0 -> we fold it into 3 = "other".)
+AGE         Age in years.
+
+PAY_0 .. PAY_6   Repayment status, most-recent (Sept) to oldest (April).
+            PAY_0 = the September status, PAY_2 = August, ... PAY_6 = April.
+            -1 = paid on time (duly).
+             0 = (undocumented; revolving credit / minimum payment in practice).
+             1 = 1 month late,  2 = 2 months late,  ...  9 = 9+ months late.
+            EXAMPLE: PAY_0 = 2  ->  the client was 2 months late on the September
+            payment. PAY_0 = -1 -> paid September on time. These columns carry the
+            strongest signal for default.
+
+BILL_AMT1 .. BILL_AMT6   Bill statement amount each month (Sept .. April), NT$.
+            EXAMPLE: BILL_AMT1 = 50000 -> the September bill was NT$50,000.
+PAY_AMT1 .. PAY_AMT6     Amount the client actually PAID each month, NT$.
+            EXAMPLE: PAY_AMT1 = 2000 with BILL_AMT1 = 50000 -> they paid only
+            NT$2,000 against a NT$50,000 bill — a warning sign.
+
+-------------------------------------------------------------------------------
+5. HOW TO ITERATE (improve the score)
+-------------------------------------------------------------------------------
+- Add / change a candidate model:
+      edit src/models.py -> get_candidate_models()  (for comparison)
+- Tune hyperparameters:
+      edit/run experiments/tune_baseline.py. It prints the best params.
+      Paste them into src/models.py -> CHOSEN_HGB_PARAMS so main.py uses them.
+      (NEVER move tuning into main.py — it must stay fast and deterministic.)
+- New preprocessing idea (e.g. engineered features):
+      add it in src/preprocessing.py, inside the Pipeline, so it stays leakage-free.
+- Get numbers/figures for the report:
+      python experiments/tune_baseline.py
+      -> prints per-model macro-F1 + saves outputs/figures/cm_*.png
+      Copy these into report Sections 3 (Results) and 4 (Discussion).
+
+-------------------------------------------------------------------------------
+6. FINAL-SUBMISSION CHECKLIST (all four are required)
+-------------------------------------------------------------------------------
+[ ] 1. LEADERBOARD PREDICTION
+       - submission.csv uploaded to DSLE (http://trinidad.polito.it:8888),
+         using your personal key. Header exactly: Id,Predicted.
+       - up to 200 submissions; you may pick up to 2 for final scoring.
+
+[ ] 2. REPORT (IEEE template, max 4 pages excl. references)
+       - sections: Problem Overview; Proposed Approach (Preprocessing, Model
+         Selection, Hyperparameter Tuning); Results; Discussion; References.
+       - DO NOT change the template's fonts/margins -> 0 points if you do.
+       - ALL experimental results must already be in the report (graders do not
+         re-run experiments to fill it in).
+
+[ ] 3. SOFTWARE (single ZIP)
+       - Python only, includes main.py and submission.csv.
+       - main.py must re-run cleanly in <=150 s and reproduce submission.csv.
+       - It is a .zip (not .rar/.7z/renamed tarball).
+
+[ ] 4. LLM-USAGE FORM
+       - Per the exam rules, LLMs are allowed for WRITING THE REPORT ONLY, not
+         for the implementation. Declare your usage honestly in the form by the
+         deadline — failure to submit it voids the project.
+
+Deadline: June 24, 2026, 23:59 CET (strict).
+===============================================================================
