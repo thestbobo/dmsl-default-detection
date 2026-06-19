@@ -22,7 +22,14 @@ from . import config
 from .preprocessing import build_preprocessor, make_code_folder
 
 # Best HGB hyper-parameters found via experiments/tune_baseline.py.
-# Start from library defaults; overwrite with tuned values when available.
+#
+# Currently EMPTY (library defaults) on purpose. A regularised config tuned to the
+# deployment objective looked +0.0035 macro-F1 better in nested CV but scored WORSE
+# on the actual leaderboard (0.708 vs 0.712 for defaults). The dev-CV gain did not
+# transfer to the evaluation set, so we trust the leaderboard and keep defaults as
+# the anchor. Lesson: on this data, sub-0.005 CV gains are noise — don't ship a
+# more-complex, lower-scoring config to chase them. Re-tune AFTER changing features
+# (params for raw features won't be optimal for an engineered feature set anyway).
 CHOSEN_HGB_PARAMS: dict = {}
 
 
