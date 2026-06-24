@@ -64,7 +64,7 @@ def run_kind(kind: str, configs: dict[str, dict], X, y) -> None:
     # 1-2. Screen at the primary seed.
     print(f"--- Screen: OOF macro-F1 @best threshold (seed {SCREEN_SEED}) ---")
     base_thr, base_f1 = oof_macro_f1(kind, configs["baseline"], X, y, SCREEN_SEED)
-    anchor = "   (anchor; expect ~0.7076)" if kind == "hgb" else "   (anchor)"
+    anchor = "   (anchor; expect ~0.709)" if kind == "hgb" else "   (anchor)"
     print(f"  {'baseline':16s} {base_f1:.4f} @thr {base_thr:.3f}{anchor}")
     screen: dict[str, float] = {}
     for name, enc in configs.items():

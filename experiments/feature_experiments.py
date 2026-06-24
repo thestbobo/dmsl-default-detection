@@ -61,7 +61,7 @@ def main() -> None:
     # 1-2. Screen at the primary seed.
     print(f"\n--- Screen: OOF macro-F1 @best threshold (seed {SCREEN_SEED}) ---")
     base_thr, base_f1 = oof_macro_f1(configs["baseline"], X, y, SCREEN_SEED)
-    print(f"  {'baseline':12s} {base_f1:.4f} @thr {base_thr:.3f}   (anchor; expect ~0.7076)")
+    print(f"  {'baseline':12s} {base_f1:.4f} @thr {base_thr:.3f}   (anchor; expect ~0.709)")
     screen: dict[str, float] = {}
     for name, groups in configs.items():
         if name == "baseline":
