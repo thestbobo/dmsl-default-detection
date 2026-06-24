@@ -1,26 +1,24 @@
-"""Encoding / preprocessing sweep (Path P2) — kept OUT of main.py (exam rule).
+"""Encoding / preprocessing sweep, kept OUT of main.py.
 
-The P2 analog of ``feature_experiments.py``. Scores each named encoding variant from
-``config.yaml`` (``experiments.encoding_configs``) on the **deployed objective** — OOF
-``predict_proba`` then macro-F1 at the best threshold over the grid — exactly as the
-submission is graded.
+A counterpart to 'feature_experiments.py'. Scores each named encoding variant from
+'config.yaml' ('experiments.encoding_configs') on the **deployed objective**, OOF
+'predict_proba' then macro-F1 at the best threshold over the grid.
 
-Unlike P1, every variant is screened on **two estimators**:
+Every variant is screened on **two estimators**:
 
-- ``hgb``  — the deployed model. A tree is invariant to monotone rescaling (Lesson L5),
-  so these encodings are expected to read as noise; the point is to confirm they are
-  LB-neutral-or-better and do NOT hurt. The ``noscale`` variant must be *bit-identical*
-  to ``baseline`` here (StandardScaler is a per-feature monotone map) — an explicit
-  sanity check below.
-- ``logreg`` — ``LogisticRegression(class_weight="balanced")``, the linear baseline that
-  feeds P3/P4. A clean ordinal scale / compressed tails help a linear model a lot, so
-  this is where the real P2 payoff (if any) shows up.
+- 'hgb'  — the tree baseline. A tree is invariant to monotone rescaling, so these
+  encodings are expected to read as noise; the point is to confirm they are neutral and
+  do NOT hurt. The 'noscale' variant must be *bit-identical* to 'baseline' here
+  (StandardScaler is a per-feature monotone map) — an explicit sanity check below.
+- 'logreg' — 'LogisticRegression(class_weight="balanced")', the linear baseline. A
+  clean ordinal scale / compressed tails help a linear model a lot, so this is where the
+  real payoff (if any) shows up.
 
-For each estimator it (1) reproduces ``baseline`` as an anchor, (2) screens every other
+For each estimator it (1) reproduces 'baseline' as an anchor, (2) screens every other
 variant at the primary seed and prints the delta, and (3) validates the ones that beat
-baseline with paired repeated CV across the fold seeds — a real edge must win on *every*
-seed (Lesson L1: single-seed CV gains <0.005 are noise). Estimators stay at their
-baseline hyper-parameters so the *encoding* effect is isolated (Lesson L3).
+baseline with paired repeated CV across the fold seeds, a real edge must win on *every*
+seed (single-seed CV gains <0.005 are noise). Estimators stay at their baseline
+hyper-parameters so the *encoding* effect is isolated.
 
 Usage:
     python experiments/encoding_experiments.py                  # both estimators, all variants
@@ -50,10 +48,10 @@ from experiments.tune_baseline import best_threshold_macro_f1  # noqa: E402
 SCREEN_SEED = config.SEED
 VALIDATION_SEEDS = config.VALIDATION_SEEDS
 # A robust win must beat baseline on every seed; this much mean gain marks it a
-# real edge rather than noise (Lesson L1).
+# real edge rather than noise.
 MIN_DELTA = 0.005
 
-# The two estimators every variant is judged on (deployed tree + linear-for-P3).
+# The two estimators every variant is judged on (tree baseline + linear baseline).
 KINDS = ("hgb", "logreg")
 
 
@@ -69,7 +67,7 @@ def build_estimator(kind: str):
 
 
 def oof_macro_f1(kind: str, encoding: dict, X, y, seed: int) -> tuple[float, float]:
-    """OOF macro-F1 of ``kind`` + ``encoding`` at its best threshold (deployed objective)."""
+    """OOF macro-F1 of 'kind' + 'encoding' at its best threshold (deployed objective)."""
     pipe = make_pipeline(build_estimator(kind), encoding=encoding)
     cv = StratifiedKFold(n_splits=config.N_SPLITS, shuffle=True, random_state=seed)
     proba = cross_val_predict(pipe, X, y, cv=cv, method="predict_proba", n_jobs=-1)[:, 1]
@@ -112,7 +110,7 @@ def run_kind(kind: str, configs: dict[str, dict], X, y) -> None:
     # 3. Paired repeated-CV validation of everything that screened above baseline.
     promising = [n for n, f1 in screen.items() if f1 > base_f1]
     if not promising:
-        print("  No variant beat baseline at the screen seed — nothing to validate.")
+        print("  No variant beat baseline at the screen seed, nothing to validate.")
         return
 
     print(f"--- Paired repeated-CV validation ({len(VALIDATION_SEEDS)} seeds) ---")
@@ -139,7 +137,7 @@ def run_kind(kind: str, configs: dict[str, dict], X, y) -> None:
 def main() -> None:
     config.set_seed()
 
-    # Optional `--kind hgb|logreg` filter; remaining args name encoding variants.
+    # Optional '--kind hgb|logreg' filter; remaining args name encoding variants.
     args = sys.argv[1:]
     kinds = list(KINDS)
     if "--kind" in args:

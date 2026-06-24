@@ -1,20 +1,19 @@
-"""Resampling / hybrid-sampling sweep (Path P10) — kept OUT of main.py.
+"""Resampling / hybrid-sampling sweep, kept OUT of main.py.
 
-NotebookLM idea #1 (SMOTE + Tomek) and the rest of the resampling family. P5 only
-tried ``class_weight``; this asks whether actually *rebalancing the training folds*
-(oversampling the minority, optionally cleaning the boundary) beats class weighting +
-threshold tuning on macro-F1.
+The imbalance sweep only tried 'class_weight'; this asks whether actually
+*rebalancing the training folds* (oversampling the minority, optionally cleaning the
+boundary, e.g. SMOTE + Tomek) beats class weighting + threshold tuning on macro-F1.
 
-NEW DEPENDENCY: imbalanced-learn. Installed locally only for this screen (like LightGBM
-in P7); it is **not** added to requirements.txt unless a candidate clears a real
-leaderboard gain (the L1 bar for a dependency).
+Optional dependency: imbalanced-learn. Installed locally only for this screen (like
+LightGBM for the boosting sweep); it is **not** added to requirements.txt unless a
+candidate clears a real leaderboard gain.
 
-Leakage safety: the sampler runs INSIDE an ``imblearn.pipeline.Pipeline``, so its
-``fit_resample`` only fires on the training folds during ``fit`` — the held-out fold in
-``cross_val_predict`` is never resampled. Because resampling does the rebalancing, the
-base estimator is the PLAIN ``rf`` (no ``class_weight``), to avoid double-correcting.
+Leakage safety: the sampler runs INSIDE an 'imblearn.pipeline.Pipeline', so its
+'fit_resample' only fires on the training folds during 'fit' — the held-out fold in
+'cross_val_predict' is never resampled. Because resampling does the rebalancing, the
+base estimator is the PLAIN 'rf' (no 'class_weight'), to avoid double-correcting.
 Scored on the deployed objective, screen + paired repeated-CV vs the champion
-``rf_balanced``.
+'rf_balanced'.
 
 Usage:
     python experiments/resampling_experiments.py
@@ -110,7 +109,7 @@ def main() -> None:
     print(f"Class balance: {y.value_counts(normalize=True).round(3).to_dict()}")
     print(f"Candidates: {names}")
 
-    print(f"\n{'=' * 64}\n  P10 — RESAMPLING (deployed objective, seed {SCREEN_SEED})\n{'=' * 64}")
+    print(f"\n{'=' * 64}\n  RESAMPLING (deployed objective, seed {SCREEN_SEED})\n{'=' * 64}")
     base_thr, base_f1 = best_threshold_macro_f1(oof(champion_pipe(), X, y, SCREEN_SEED), y)
     print(f"  {ANCHOR + ' (champion)':24s} {base_f1:.4f} @thr {base_thr:.3f}")
 

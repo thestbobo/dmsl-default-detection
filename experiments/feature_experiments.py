@@ -1,19 +1,18 @@
-"""Feature-engineering sweep (Path P1) — kept OUT of main.py (exam rule).
+"""Feature-engineering sweep — kept OUT of main.py.
 
-Scores each named feature config from ``config.yaml`` (``experiments.feature_configs``)
-on the **deployed objective** — OOF ``predict_proba`` then macro-F1 at the best
-threshold over the grid — exactly as the submission is graded. It:
+Scores each named feature config from 'config.yaml' ('experiments.feature_configs')
+on the **deployed objective** — OOF 'predict_proba' then macro-F1 at the best
+threshold over the grid, exactly as the submission is graded. It:
 
-1. reproduces the ``baseline`` (no engineered features) as a harness sanity check
-   (expect ~0.7076 @thr ~0.335, matching E00);
+1. reproduces the 'baseline' (no engineered features) as a harness sanity check;
 2. screens every other config at the primary seed and prints the delta;
 3. validates the configs that beat baseline with paired repeated CV across the
    fold seeds — a real edge must win on *every* seed, not just a lucky split
-   (Lesson L1: single-seed CV gains <0.005 are noise).
+   (single-seed CV gains <0.005 are noise).
 
-Reuses the deployed-objective helper from ``tune_baseline.py`` so the scoring is
-identical to the HGB tuning path. HGB stays at library defaults for every config
-so the *feature* effect is isolated (Lesson L3 — re-tuning is step X, later).
+Reuses the deployed-objective helper from 'tune_baseline.py' so the scoring is
+identical to the HGB tuning path. HGB stays at library defaults for every config so
+the *feature* effect is isolated (re-tuning on the winning set is a later step).
 
 Usage:
     python experiments/feature_experiments.py              # sweep all configs
@@ -41,12 +40,12 @@ from experiments.tune_baseline import best_threshold_macro_f1  # noqa: E402
 SCREEN_SEED = config.SEED
 VALIDATION_SEEDS = config.VALIDATION_SEEDS
 # A robust win must beat baseline on every seed; this much mean gain marks it a
-# real edge rather than noise (Lesson L1).
+# real edge rather than noise.
 MIN_DELTA = 0.005
 
 
 def oof_macro_f1(feature_groups, X, y, seed: int) -> tuple[float, float]:
-    """OOF macro-F1 of HGB(defaults) + ``feature_groups`` at its best threshold."""
+    """OOF macro-F1 of HGB(defaults) + 'feature_groups' at its best threshold."""
     pipe = make_pipeline(
         HistGradientBoostingClassifier(random_state=config.SEED),
         feature_groups=feature_groups,
@@ -96,7 +95,7 @@ def main() -> None:
     # 3. Paired repeated-CV validation of everything that screened above baseline.
     promising = [n for n, (f1, _, _) in screen.items() if f1 > base_f1]
     if not promising:
-        print("\nNo config beat baseline at the screen seed — nothing to validate.")
+        print("\nNo config beat baseline at the screen seed, nothing to validate.")
         return
 
     print(f"\n--- Paired repeated-CV validation ({len(VALIDATION_SEEDS)} seeds) ---")

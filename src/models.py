@@ -1,13 +1,15 @@
 """Model factory.
 
-- ``make_pipeline`` glues the cleaning + preprocessing in front of any estimator.
-- ``get_candidate_models`` returns the three baselines compared in evaluate.py.
-- ``build_chosen_pipeline`` returns the *single* model that main.py trains for
-  the submission: the HistGradientBoosting pipeline wrapped in a
-  threshold tuner that optimises macro-F1 (leakage-safe, via inner CV).
+- 'make_pipeline' glues the cleaning + preprocessing in front of any estimator.
+- 'get_candidate_models' returns the three baselines compared in evaluate.py.
+- 'build_chosen_pipeline' returns the single model that main.py trains for the
+  submission: the configured pipeline (a class-balanced random forest on the
+  engineered feature set, by default) wrapped in a threshold tuner that optimises
+  macro-F1 (leakage-safe, via inner CV).
 
-To change the "best" config after tuning in experiments/, edit the ``chosen:``
-block in ``config.yaml`` (``feature_groups`` + ``hgb_params``) — NOT this file.
+To change the deployed model after tuning in experiments/, edit the 'chosen:'
+block in 'config.yaml' ('ensemble' / 'feature_groups' / 'encoding'), NOT
+this file.
 """
 
 from __future__ import annotations
@@ -38,16 +40,16 @@ from .preprocessing import (
 def make_pipeline(estimator, feature_groups=(), encoding=None) -> Pipeline:
     """Wrap an estimator with code-folding + (optional) feature engineering + encoding + preprocessing.
 
-    ``feature_groups`` is an iterable of engineered-feature family names (see
-    ``preprocessing.ENGINEERED_COLUMNS``); ``encoding`` is an optional P2 encoding
-    spec (see ``preprocessing.apply_encoding`` / ``config.ENCODING_DEFAULTS``). With
+    'feature_groups' is an iterable of engineered-feature family names (see
+    'preprocessing.ENGINEERED_COLUMNS'); 'encoding' is an optional encoding
+    spec (see 'preprocessing.apply_encoding' / 'config.ENCODING_DEFAULTS'). With
     neither (the defaults) the pipeline is identical to the raw-feature baseline.
 
-    Order is ``fold -> [engineer] -> [encode] -> pre``: feature engineering runs
-    *before* encoding so engineered ratios are computed from the RAW amounts
-    (matching their E02-E06 definitions); encoding only re-expresses the model
-    columns. Engineered / encoding-flag columns are routed through the numeric pipe,
-    and the ``scale`` knob gates ``StandardScaler`` there.
+    Order is 'fold -> [engineer] -> [encode] -> pre': feature engineering runs
+    *before* encoding so engineered ratios are computed from the raw amounts;
+    encoding only re-expresses the model columns. Engineered / encoding-flag columns
+    are routed through the numeric pipe, and the 'scale' knob gates
+    'StandardScaler' there.
     """
     feature_groups = list(feature_groups)
     encoding = dict(encoding or {})
@@ -63,12 +65,12 @@ def make_pipeline(estimator, feature_groups=(), encoding=None) -> Pipeline:
 
 
 def _make_lgbm(**kwargs):
-    """LightGBM classifier (Path P7), imported lazily.
+    """LightGBM classifier, imported lazily.
 
-    LightGBM is the only NON-sklearn estimator and an optional dependency: importing
-    it here (not at module top) means ``main.py`` and every other experiment keep
-    working even when LightGBM / its OpenMP runtime is absent — the import only fires
-    if a `kind: lgbm` config is actually requested. ``verbose=-1`` silences its
+    LightGBM is the only non-sklearn estimator and an optional dependency: importing
+    it here (not at module top) means 'main.py' and every other experiment keep
+    working even when LightGBM / its OpenMP runtime is absent, the import only fires
+    if a 'kind: lgbm' config is actually requested. 'verbose=-1' silences its
     per-fit chatter. sklearn-compatible API, so it drops into the Pipeline unchanged.
     """
     from lightgbm import LGBMClassifier
@@ -78,32 +80,11 @@ def _make_lgbm(**kwargs):
     return LGBMClassifier(**kwargs)
 
 
-def _make_catboost(**kwargs):
-    """CatBoost classifier (Path P14 item 3), imported lazily.
-
-    Like ``_make_lgbm``, an optional non-sklearn dependency imported only when a
-    ``kind: catboost`` config is requested, so main.py / other experiments are
-    unaffected when CatBoost is absent. CatBoost's ordered boosting is overfitting-
-    resistant (the failure mode that sank tuned HGB on this LB), and it errs
-    differently from RF — a candidate ensemble member. ``auto_class_weights="Balanced"``
-    mirrors the rf_balanced direction (L9). sklearn-compatible, drops into the Pipeline.
-    """
-    from catboost import CatBoostClassifier
-
-    # make_estimator injects random_state; CatBoost's knob is random_seed.
-    if "random_state" in kwargs:
-        kwargs.setdefault("random_seed", kwargs.pop("random_state"))
-    kwargs.setdefault("verbose", False)
-    kwargs.setdefault("allow_writing_files", False)
-    kwargs.setdefault("thread_count", -1)
-    return CatBoostClassifier(**kwargs)
-
-
-# Estimator families addressable by the config.yaml `kind` knob (experiments.model_configs
-# + chosen.ensemble). The single source of truth shared by experiments/model_experiments.py
-# and the deployed ensemble below — so the deployed members are byte-for-byte the ones P3
-# scored. Every class accepts random_state (injected in make_estimator). `lgbm` is a lazy
-# factory (P7, optional dep); the rest are sklearn classes.
+# Estimator families addressable by the config.yaml 'kind' knob (experiments
+# model_configs + chosen.ensemble), shared by experiments/model_experiments.py and the
+# deployed ensemble below so the deployed members match the ones scored in the bake-off.
+# Every class accepts random_state (injected in make_estimator); 'lgbm' is a lazy
+# factory (optional dep), the rest are sklearn classes.
 _ESTIMATORS = {
     "hgb": HistGradientBoostingClassifier,
     "logreg": LogisticRegression,
@@ -111,7 +92,6 @@ _ESTIMATORS = {
     "et": ExtraTreesClassifier,
     "gb": GradientBoostingClassifier,
     "lgbm": _make_lgbm,
-    "catboost": _make_catboost,
 }
 
 
@@ -149,10 +129,10 @@ def get_candidate_models() -> dict[str, Pipeline]:
 def _member_pipeline(name: str, feature_groups=()) -> Pipeline:
     """Build one ensemble member from its ``experiments.model_configs`` spec.
 
-    Each member is a full preprocessing+estimator pipeline using its own encoding
-    (resolved from the named P2 variant), so the deployed soft-vote is identical to
-    what ``experiments/model_experiments.py`` scored in P3. ``feature_groups`` (P14)
-    prepends engineered-feature families; only the *single* deployed member uses it
+    Each member is a full preprocessing+estimator pipeline using its own named
+    encoding variant, so the deployed soft-vote is identical to what
+    'experiments/model_experiments.py' scored. 'feature_groups' prepends
+    engineered-feature families; only the single deployed member uses it
     (multi-member soft-votes keep each member's own raw feature space).
     """
     spec = config.MODEL_CONFIGS[name]
@@ -165,10 +145,10 @@ def _member_pipeline(name: str, feature_groups=()) -> Pipeline:
 
 
 def build_chosen_ensemble(members) -> VotingClassifier:
-    """Equal-weight soft-vote (``VotingClassifier``) of the named model configs (Path P4).
+    """Equal-weight soft-vote ('VotingClassifier') of the named model configs.
 
-    Averages the members' ``predict_proba``; members fit in parallel (``n_jobs=-1``).
-    Wrapped by ``build_chosen_pipeline`` in the same threshold tuner as the single model.
+    Averages the members' ``predict_proba``; members fit in parallel ('n_jobs=-1').
+    Wrapped by 'build_chosen_pipeline' in the same threshold tuner as the single model.
     """
     estimators = [(name, _member_pipeline(name)) for name in members]
     return VotingClassifier(estimators=estimators, voting="soft", n_jobs=-1)
@@ -177,15 +157,14 @@ def build_chosen_ensemble(members) -> VotingClassifier:
 def build_chosen_model():
     """The model used for the final submission (no threshold tuning yet).
 
-    If ``config.yaml`` ``chosen.ensemble`` lists members, deploy their equal-weight
-    soft-vote (P4); otherwise the single HGB pipeline. Feature groups, encoding spec
-    and HGB params come from the ``chosen:`` block.
+    If 'config.yaml' 'chosen.ensemble' lists members, deploy their equal-weight
+    soft-vote; with a single member, deploy that one estimator. Feature groups,
+    encoding spec and any HGB params come from the 'chosen:' block.
     """
     if config.CHOSEN_ENSEMBLE:
         if len(config.CHOSEN_ENSEMBLE) == 1:
-            # P14: the deployed single model may carry engineered features (e.g.
-            # rf_balanced + paysem_util_payratio -> LB 0.719). chosen.feature_groups
-            # applies only to this single-member deploy path.
+            # The deployed single model carries the chosen engineered-feature groups;
+            # chosen.feature_groups applies only to this single-member deploy path.
             return _member_pipeline(config.CHOSEN_ENSEMBLE[0], config.CHOSEN_FEATURE_GROUPS)
         return build_chosen_ensemble(config.CHOSEN_ENSEMBLE)
     return make_pipeline(
@@ -198,9 +177,9 @@ def build_chosen_model():
 def build_chosen_pipeline() -> TunedThresholdClassifierCV:
     """The model main.py trains and predicts with.
 
-    Wraps the chosen HGB pipeline in ``TunedThresholdClassifierCV`` so the
-    decision threshold is chosen to maximise macro-F1 on inner CV folds only
-    (leakage-safe). ``.predict`` then applies that tuned threshold.
+    Wraps the chosen pipeline in 'TunedThresholdClassifierCV' so the decision
+    threshold is chosen to maximise macro-F1 on inner CV folds only (leakage-safe).
+    '.predict' then applies that tuned threshold.
     """
     cv = StratifiedKFold(n_splits=config.N_SPLITS, shuffle=True, random_state=config.SEED)
     return TunedThresholdClassifierCV(

@@ -1,12 +1,12 @@
-"""Path P14 / external-review item 1 — multiply the two working levers + re-tune.
+"""Combine the two working levers (engineered features + tuned RF) and re-tune.
 
-The review's highest-EV move: the best FEATURES (payratio, LB 0.716) and the best
-HYPERPARAMETERS (Path-X tuned RF cand2 -> LB 0.715, cand0 -> 0.713) live in SEPARATE
-submissions — cand2 was tuned on raw features, payratio rode on default rf_balanced.
-This script (a) combines them, and (b) runs a FRESH randomized RF search *on the payratio
-feature set*, because the optimum shifts once the features change (Lesson L3).
+The best features and the best hyper-parameters were found in separate runs: the
+tuned RF on raw features, the engineered features on the default rf_balanced. This
+script (a) combines them, and (b) runs a fresh randomized RF search *on the engineered
+feature set*, because the optimum shifts once the features change.
 
-All candidates are emitted as numbered submissions regardless of CV — the LB judges (L1).
+All candidates are emitted as numbered submissions regardless of CV, the leaderboard
+judges.
 
     python experiments/feature_retune_submit.py             # combine + re-tune + submit
     python experiments/feature_retune_submit.py --no-submit # screen only
@@ -36,25 +36,25 @@ from src.models import make_estimator, make_pipeline  # noqa: E402
 NOSCALE = config.ENCODING_CONFIGS["noscale"]
 N_SEARCH = 30
 N_SUBMIT_TUNED = 3
-# Feature set the fresh RF search runs on. Default = the proven LB-0.716 payratio set
-# (review item 1); override with `--groups <feature_config_name>` to re-tune on the
-# current LB winner (e.g. paysem_util_payratio -> 0.719). `--retune-only` skips the
-# fixed lever-multiplication combos and just runs the search on --groups.
+# Feature set the fresh RF search runs on. Default = the payratio set; override with
+# '--groups <feature_config_name>' to re-tune on another set (e.g. paysem_util_payratio).
+# '--retune-only' skips the fixed lever-multiplication combos and just runs the search
+# on --groups.
 RETUNE_GROUPS = ["payratio"]
 
-# Path-X RF winners (from outputs/submissions/MANIFEST.md): the params that transferred.
+# Tuned RF parameter sets from an earlier randomized search that transferred to the LB.
 CAND2 = {"n_estimators": 800, "max_depth": 32, "max_features": 0.3, "min_samples_leaf": 40,
          "min_samples_split": 2, "max_samples": None, "criterion": "entropy",
-         "class_weight": "balanced", "n_jobs": -1}                          # #17 -> LB 0.715
+         "class_weight": "balanced", "n_jobs": -1}
 CAND0 = {"n_estimators": 800, "max_depth": 24, "max_features": "sqrt", "min_samples_leaf": 10,
          "min_samples_split": 5, "max_samples": 0.7, "criterion": "gini",
-         "class_weight": "balanced", "n_jobs": -1}                          # #15 -> LB 0.713
+         "class_weight": "balanced", "n_jobs": -1}
 
-# (params, feature_groups, label) — the lever-multiplication grid.
+# (params, feature_groups, label), the lever-multiplication grid.
 COMBOS = [
-    (CAND2, ["payratio"], "Path-X RF cand2 + payratio"),
-    (CAND2, ["coverx", "payratio"], "Path-X RF cand2 + coverx_payratio"),
-    (CAND0, ["payratio"], "Path-X RF cand0 + payratio"),
+    (CAND2, ["payratio"], "tuned RF cand2 + payratio"),
+    (CAND2, ["coverx", "payratio"], "tuned RF cand2 + coverx_payratio"),
+    (CAND0, ["payratio"], "tuned RF cand0 + payratio"),
 ]
 
 
@@ -115,7 +115,7 @@ def main() -> None:
 
     # --- (a) Lever-multiplication combos: tuned params x best features ---
     if not retune_only:
-        print("\n--- Combos: Path-X tuned params x engineered features ---")
+        print("\n--- Combos: tuned RF params x engineered features ---")
         for params, groups, label in COMBOS:
             thr, f1 = _score(params, groups, X, y)
             print(f"  {label:36s} {f1:.4f} @thr {thr:.3f}  d={f1 - base_f1:+.4f}")

@@ -2,19 +2,18 @@
 #
 # src/config.py loads this file once at import and exposes the values as the
 # same module-level names other code already imports (config.SEED, config.NUMERIC,
-# config.N_SPLITS, ...). Derived things that are code, not knobs — repo paths,
-# label/id detection, set_seed — stay in src/config.py.
+# config.N_SPLITS, ...). 
 #
-# To change the deployed model after experiments, edit `chosen:` below (NOT main.py
-# and NOT src/models.py). Tuning still runs in experiments/ (exam rule).
+# To change the deployed model after experiments, edit 'chosen:' below (NOT main.py
+# and NOT src/models.py). Tuning still runs in experiments.
 
 # Reproducibility ------------------------------------------------------------
-seed: 8888 # deployed headline = config_B (LB 0.721). Seeds tried: 42, 11..888; configB best at 55/8888/10.
+seed: 8888 # single global seed; injected into every estimator and set_seed().
 
 # Cross-validation -----------------------------------------------------------
 cv:
   n_splits: 5
-  # Fold seeds for paired repeated-CV robustness checks (Lesson L1).
+  # Fold seeds for paired repeated-CV robustness checks.
   validation_seeds: [42, 1, 7, 2024, 99]
 
 # Deployed objective ---------------------------------------------------------
@@ -39,11 +38,12 @@ columns:
   base_numeric: [LIMIT_BAL, AGE]
 
 # Chosen production config (what main.py trains) -----------------------------
-# The P1 feature-engineering winner and any tuned HGB params land here.
+# Deployed model: class-balanced random forest on the engineered feature set, with
+# macro-F1 threshold tuning. The chosen feature groups and encoding land here.
 chosen:
   feature_groups: [paysem, stress, payratio]
   encoding: {pay_remap: false, pay_flags: false, scale: false, log1p: false, bill_neg: keep}
-  hgb_params: {}        # ignored on the RF deploy path
+  hgb_params: {}        # ignored on the random-forest deploy path
   ensemble: [rf_balanced]
 
 
@@ -58,78 +58,76 @@ experiments:
     util: [util]
     payratio: [payratio]
     bill: [bill]
-    # E05 combinations (the two mildly-positive families + interactions)
+    # Combinations of the mildly-positive families + interactions.
     util_payratio: [util, payratio]
     pay_util_payratio: [pay, util, payratio]
     all: [pay, util, payratio, bill]
-    # P14 (2026-06-21 external review): payratio transferred (LB 0.716 on rf_balanced).
-    # New PAY-semantic family + recent coverage/trend, alone and stacked on payratio —
-    # the lever that actually moves the LB is FE on RF (E28).
+    # PAY-semantic family + recent coverage/trend, alone and stacked on payratio.
+    # Feature engineering on the random forest is the main lever that moves the LB.
     paysem: [paysem]
     coverx: [coverx]
     paysem_payratio: [paysem, payratio]
     coverx_payratio: [coverx, payratio]
     paysem_coverx_payratio: [paysem, coverx, payratio]
     paysem_util_payratio: [paysem, util, payratio]
-    # E28: paysem_util_payratio scored LB 0.719 (new best). Explore around the winner.
+    # Variations around the paysem + util + payratio triplet.
     paysem_util: [paysem, util]
     paysem_util_coverx_payratio: [paysem, util, coverx, payratio]
     paysem_util_payratio_bill: [paysem, util, payratio, bill]
     paysem_coverx: [paysem, coverx]
     all_new: [paysem, coverx, util, payratio]
-    # E29: granular per-month ratios + stress interactions, swapped into the winning triplet.
+    # Granular per-month ratios + stress interactions swapped into the triplet.
     paysem_utilmonths_payratio: [paysem, utilmonths, payratio]
     paysem_util_payamtratio: [paysem, util, payamtratio]
     paysem_stress_payratio: [paysem, stress, payratio]
     paysem_util_payratio_stress: [paysem, util, payratio, stress]
-    # E31: richer PAY dynamics (recovery/escalation/recent-vs-old). Swap/augment paysem.
+    # Richer PAY dynamics (recovery/escalation/recent-vs-old) augmenting paysem.
     paysem2_util_payratio: [paysem2, util, payratio]
     paysem_paysem2_payratio: [paysem, paysem2, payratio]
     paysem2_stress_payratio: [paysem2, stress, payratio]
     paysem_paysem2_util_payratio: [paysem, paysem2, util, payratio]
 
-  # Named ENCODING variants swept by experiments/encoding_experiments.py (Path P2).
+  # Named ENCODING variants swept by experiments/encoding_experiments.py.
   # Each value is an encoding spec (toggles); partial specs are merged onto
   # ENCODING_DEFAULTS in src/config.py. Every variant changes ONE thing vs `baseline`
   # (except the deliberate `clean_linear` combo), so its effect is isolated. Screened on
-  # BOTH hgb and logreg — a monotone rescaling is a no-op for the tree (L5) but matters
-  # for the linear model, which is the real P2 payoff carried to P3.
+  # both hgb and logreg, a monotone rescaling is a no-op for the tree but matters for
+  # the linear model.
   encoding_configs:
-    baseline:        {}                                                      # E00 encoding (scale on, raw cols)
-    pay_remap:       {pay_remap: true}                                       # E07: clean monotone PAY_* ordinal
-    pay_remap_flags: {pay_remap: true, pay_flags: true}                      # E07: + per-month delinquency flags
-    noscale:         {scale: false}                                          # E08: drop StandardScaler (no-op for HGB)
-    log1p:           {log1p: true}                                           # E09: signed log1p on monetary cols
-    bill_clip:       {bill_neg: clip}                                        # E10: clip overpayments at 0
-    bill_flag:       {bill_neg: flag}                                        # E10: keep, add overpayment flags
-    # Linear-oriented combo: clean ordinal + compressed tails + scaling (for LogReg/P3).
+    baseline:        {}                                                      # baseline encoding (scale on, raw cols)
+    pay_remap:       {pay_remap: true}                                       # clean monotone PAY_* ordinal
+    pay_remap_flags: {pay_remap: true, pay_flags: true}                      # + per-month delinquency flags
+    noscale:         {scale: false}                                          # drop StandardScaler (no-op for trees)
+    log1p:           {log1p: true}                                           # signed log1p on monetary cols
+    bill_clip:       {bill_neg: clip}                                        # clip overpayments at 0
+    bill_flag:       {bill_neg: flag}                                        # keep, add overpayment flags
+    # Linear-oriented combo: clean ordinal + compressed tails + scaling (for LogReg).
     clean_linear:    {pay_remap: true, log1p: true, scale: true, bill_neg: clip}
 
-  # Named MODEL configs swept by experiments/model_experiments.py (Path P3).
-  # Each entry: `kind` (estimator family, resolved to a class by the script's
-  # build_estimator), optional `params` (estimator kwargs; random_state is injected),
-  # and an `encoding` variant NAME from encoding_configs above — each model gets the
-  # encoding that suits it (trees: a monotone rescaling is a no-op so `noscale`; LogReg:
-  # the P2 `clean_linear` winner). The sweep scores each on the deployed objective,
-  # measures prediction diversity vs the HGB anchor, and previews equal-weight soft-vote
-  # ensembles (the bridge to P4). hgb is the anchor every challenger is compared against.
+  # Named MODEL configs swept by experiments/model_experiments.py.
+  # Each entry: 'kind' (estimator family, resolved to a class by the script),
+  # optional 'params' (estimator kwargs; random_state is injected), and an 'encoding'
+  # variant NAME from encoding_configs above, each model gets the encoding that suits
+  # it (trees: a monotone rescaling is a no-op, so 'noscale'; LogReg: the 'clean_linear'
+  # combo). The sweep scores each on the deployed objective, measures prediction
+  # diversity vs the HGB anchor, and previews equal-weight soft-vote ensembles. hgb is
+  # the anchor every challenger is compared against.
   model_configs:
-    hgb:          {kind: hgb,    encoding: noscale}                                                   # deployed anchor (~0.7076)
-    logreg_clean: {kind: logreg, encoding: clean_linear, params: {class_weight: balanced, max_iter: 1000}}  # P2 winner; the diverse linear
+    hgb:          {kind: hgb,    encoding: noscale}                                                   # baseline anchor
+    logreg_clean: {kind: logreg, encoding: clean_linear, params: {class_weight: balanced, max_iter: 1000}}  # the diverse linear baseline
     rf:           {kind: rf,     encoding: noscale, params: {n_estimators: 300, min_samples_leaf: 20, n_jobs: -1}}
     rf_balanced:  {kind: rf,     encoding: noscale, params: {n_estimators: 300, min_samples_leaf: 20, class_weight: balanced, n_jobs: -1}}
     et:           {kind: et,     encoding: noscale, params: {n_estimators: 300, min_samples_leaf: 20}}
-    # Item 6 (2026-06-21 review): ExtraTrees + balanced weights — never tried (P5 covered
-    # only HGB weights + RF). ET is more decorrelated than RF (L8), so also a candidate
-    # ensemble member. Mirrors rf_balanced's knobs.
+    # ExtraTrees + balanced weights: more decorrelated than RF, a candidate ensemble
+    # member. Mirrors rf_balanced's knobs.
     et_balanced:  {kind: et,     encoding: noscale, params: {n_estimators: 300, min_samples_leaf: 20, class_weight: balanced, n_jobs: -1}}
     gb:           {kind: gb,     encoding: baseline}                                                  # plain GradientBoosting (slow, no histogram)
 
-  # Named ENSEMBLE previews validated by experiments/model_experiments.py (P3 -> P4 bridge).
+  # Named ENSEMBLE previews validated by experiments/model_experiments.py.
   # Each value is a list of model_configs names whose OOF probabilities are averaged
   # (equal-weight soft-vote) at a shared CV split, then threshold-tuned on the deployed
   # objective. Soft-voting on OOF arrays is honest because all models share the same
-  # folds at a given seed. Calibration / learned weights / stacking are the P4 build.
+  # folds at a given seed.
   ensemble_configs:
     hgb_logreg:        [hgb, logreg_clean]
     hgb_rf:            [hgb, rf]
@@ -137,13 +135,12 @@ experiments:
     hgb_logreg_et:     [hgb, logreg_clean, et]
     hgb_logreg_rf:     [hgb, logreg_clean, rf]
     all:               [hgb, logreg_clean, rf, et, gb]
-    # Item 3 (2026-06-21 review): rebuild the P4 idea around the rf_balanced champion +
-    # the most-decorrelated members (L8), never submitted before. LB decides (L1 both ways).
+    # Soft-vote around the rf_balanced champion + the most-decorrelated members.
     rfbal_logreg_et:   [rf_balanced, logreg_clean, et]
 
-  # Path P5: zero-dependency imbalance handling. Threshold tuning already handles the
-  # final decision cut; these candidates ask whether changing the fitted loss via
-  # class_weight changes probability ranking enough to help macro-F1.
+  # Imbalance handling. Threshold tuning already handles the final decision cut; these
+  # candidates ask whether changing the fitted loss via class_weight changes the
+  # probability ranking enough to help macro-F1. Swept by imbalance_experiments.py.
   imbalance_configs:
     hgb_balanced: {base_model: hgb, params: {class_weight: balanced}}
     hgb_w15:      {base_model: hgb, params: {class_weight: {0: 1.0, 1: 1.5}}}
@@ -156,13 +153,12 @@ experiments:
     rf_balanced_subsample: {base_model: rf, params: {class_weight: balanced_subsample, n_jobs: -1}}
     rf_balanced_mf05: {base_model: rf, params: {max_features: 0.5, class_weight: balanced, n_jobs: -1}}
 
-  # Path P7: stronger boosting library (LightGBM). NEW DEPENDENCY (lightgbm + an
-  # OpenMP runtime) — gated on a real LB gain over the deployed rf_balanced (0.7115
-  # CV / 0.713 LB). Swept by experiments/boosting_experiments.py with the same
-  # deployed objective + paired repeated CV. `kind: lgbm` resolves to the lazy
-  # LGBMClassifier factory in src/models.py; encoding `noscale` (trees ignore monotone
-  # rescaling, L5). `is_unbalance` / `class_weight: balanced` mirror the P5 lever that
-  # actually transferred. Regularised variants guard against overfitting the 24k rows.
+  # Stronger boosting library (LightGBM). Optional dependency (lightgbm + an OpenMP
+  # runtime), swept by experiments/boosting_experiments.py with the same deployed
+  # objective + paired repeated CV. 'kind: lgbm' resolves to the lazy LGBMClassifier
+  # factory in src/models.py; encoding 'noscale' (trees ignore monotone rescaling).
+  # 'class_weight: balanced' mirrors the class-weight lever; regularised variants guard
+  # against overfitting the 24k training rows.
   boosting_configs:
     lgbm_default:       {kind: lgbm, encoding: noscale}
     lgbm_balanced:      {kind: lgbm, encoding: noscale, params: {class_weight: balanced}}
@@ -170,31 +166,17 @@ experiments:
     lgbm_reg_balanced:  {kind: lgbm, encoding: noscale, params: {n_estimators: 400, learning_rate: 0.03, num_leaves: 31, min_child_samples: 50, subsample: 0.8, subsample_freq: 1, colsample_bytree: 0.8, reg_lambda: 1.0, class_weight: balanced}}
     lgbm_deep_balanced: {kind: lgbm, encoding: noscale, params: {n_estimators: 600, learning_rate: 0.02, num_leaves: 63, min_child_samples: 80, subsample: 0.8, subsample_freq: 1, colsample_bytree: 0.7, reg_lambda: 2.0, class_weight: balanced}}
 
-  # Path P8: STACKING (zero-dep). P4 only tried EQUAL-WEIGHT soft-vote (lost on LB,
-  # 0.710). A StackingClassifier instead trains a logistic meta-learner on the members'
-  # out-of-fold predict_proba, so it can *learn* member weights/interactions rather than
-  # averaging them. Members are named model_configs entries (each carries its own
-  # encoding, so the stack reuses the byte-identical P3 pipelines); `meta` selects the
-  # final estimator; `passthrough` (optional) also feeds raw features to the meta-learner.
-  # Swept by experiments/stacking_experiments.py vs the deployed champion rf_balanced.
-  stacking_configs:
-    stack_rfbal_logreg:       {members: [rf_balanced, logreg_clean], meta: logreg}
-    stack_rfbal_hgb_logreg:   {members: [rf_balanced, hgb, logreg_clean], meta: logreg}
-    stack_hgb_logreg_rf:      {members: [hgb, logreg_clean, rf], meta: logreg}
-    stack_rfbal_hgb_logreg_balmeta: {members: [rf_balanced, hgb, logreg_clean], meta: logreg_balanced}
-
-  # Path P10: RESAMPLING (NEW DEP: imbalanced-learn). P5 only tried class_weight; this
-  # tries actually rebalancing the training folds. NotebookLM #1 is the SMOTE+Tomek
-  # hybrid. The sampler runs INSIDE an imblearn Pipeline so it only fires on the training
-  # folds during fit (never the held-out fold) — leakage-safe. Because resampling does
-  # the rebalancing, the base estimator is the PLAIN rf (no class_weight), to avoid
-  # double-correcting. Swept by experiments/resampling_experiments.py vs the deployed
-  # champion rf_balanced; same +0.005 / real-LB-gain bar as any new dependency (L1/P7).
+  # Resampling (optional dependency: imbalanced-learn). Rather than class weighting,
+  # this rebalances the training folds. The sampler runs INSIDE an imblearn Pipeline so
+  # it only fires on the training folds during fit (never the held-out fold),
+  # leakage-safe. Because resampling does the rebalancing, the base estimator is the
+  # plain rf (no class_weight) to avoid double-correcting. Swept by
+  # experiments/resampling_experiments.py vs the deployed rf_balanced champion.
   resampling_configs:
     smote:        {base_model: rf, sampler: smote}
-    smotetomek:   {base_model: rf, sampler: smotetomek}     # NotebookLM #1 (hybrid)
-    smoteenn:     {base_model: rf, sampler: smoteenn}        # hybrid (SMOTE + edited NN)
+    smotetomek:   {base_model: rf, sampler: smotetomek}      # SMOTE + Tomek links (hybrid)
+    smoteenn:     {base_model: rf, sampler: smoteenn}        # SMOTE + edited NN (hybrid)
     borderline:   {base_model: rf, sampler: borderline}      # BorderlineSMOTE
     undersample:  {base_model: rf, sampler: undersample}     # RandomUnderSampler
-    smote_hgb:    {base_model: hgb, sampler: smote}           # hybrid lever on the boosting path
+    smote_hgb:    {base_model: hgb, sampler: smote}           # SMOTE on the boosting path
     smotetomek_hgb: {base_model: hgb, sampler: smotetomek}

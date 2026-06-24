@@ -1,12 +1,12 @@
 """Shared helpers for generating numbered candidate submissions.
 
-The DSLE leaderboard still has >180 free slots and our dev CV is a weak,
-*pessimistic* predictor of the LB (see experiment_log L1 + the 2026-06-21 external
-review): a CV-neutral change is as likely to be +0.008 LB as -0.007. So instead of
-pre-filtering candidates on CV, we GENERATE many and let the human upload them.
+Development CV is a weak, pessimistic predictor of the public leaderboard on this
+data: a CV-neutral change can move the leaderboard in either direction. So instead of
+pre-filtering candidates on CV, we generate several and upload them for the leaderboard
+to rank.
 
 Every candidate is written to ``outputs/submissions/submission_<N>.csv`` (sequential,
-never clobbering the deployed ``submission.csv``) and logged to
+never clobbering the deployed ``submission.csv``) and logged to a local
 ``outputs/submissions/MANIFEST.md`` so each numbered file is traceable to its config.
 
 Reuses the production submission writer/validator (src/submission.py) and the model
@@ -32,9 +32,9 @@ from src.submission import validate_submission, write_submission  # noqa: E402
 MANIFEST = config.OUT_SUB_DIR / "MANIFEST.md"
 _MANIFEST_HEADER = (
     "# Candidate submission manifest\n\n"
-    "Each `submission_<N>.csv` in this folder, newest at the bottom. Upload these to\n"
-    "DSLE and paste the returned LB score into the `LB` column (and into\n"
-    "`docs/experiment_log.md`). `submission.csv` (no number) is the deployed champion.\n\n"
+    "Each `submission_<N>.csv` in this folder, newest at the bottom. Upload these and\n"
+    "paste the returned leaderboard score into the `LB` column. `submission.csv` (no\n"
+    "number) is the deployed model.\n\n"
     "| # | Date | Default rate | OOF macro-F1 | Description | LB |\n"
     "|---|------|--------------|--------------|-------------|----|\n"
 )

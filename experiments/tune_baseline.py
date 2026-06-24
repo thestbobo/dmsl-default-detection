@@ -1,18 +1,18 @@
-"""Model comparison + HGB hyper-parameter tuning — kept OUT of main.py (exam rule).
+"""Model comparison + HGB hyper-parameter tuning, kept OUT of main.py.
 
 Two things happen here:
 
-1. ``compare_all`` — full 5-fold metrics for the three baselines + saved
+1. 'compare_al' — full 5-fold metrics for the three baselines + saved
    confusion-matrix figures (the numbers/plots for the report).
 
-2. ``tune_hgb`` — a randomised search over the HistGradientBoosting
+2. 'tune_hgb', a randomised search over the HistGradientBoosting
    hyper-parameters, followed by a paired repeated-CV validation of the best
    candidates against the library defaults.
 
-IMPORTANT — what we optimise and why
+IMPORTANT: what we optimise and why
 ------------------------------------
-``main.py`` submits HGB wrapped in ``TunedThresholdClassifierCV``: it does NOT
-predict at the 0.5 cut, it predicts at the threshold that maximises macro-F1.
+'main.py' submits the chosen model wrapped in 'TunedThresholdClassifierCV': it
+does NOT predict at the 0.5 cut, it predicts at the threshold that maximises macro-F1.
 So the right tuning objective is **macro-F1 at the best threshold**, evaluated on
 out-of-fold predictions — NOT macro-F1 at 0.5.
 
@@ -22,7 +22,8 @@ worse and the leaderboard score dropped (0.712 -> 0.703). Optimising the deploye
 objective fixes that mismatch; the validation step below guards against picking a
 config that only wins on a single lucky CV split.
 
-Copy the printed best parameters into ``config.yaml`` -> ``chosen.hgb_params``.
+Copy the printed best HGB parameters into 'config.yaml' -> 'chosen.hgb_params'
+(used when the chosen model is HGB).
 
 Usage:
     python experiments/tune_baseline.py
@@ -112,7 +113,7 @@ def validate(candidates: list[dict], X, y) -> dict:
     """Paired repeated CV (several fold seeds) of default vs each candidate.
 
     A candidate is only trustworthy if it beats the defaults on *every* seed by
-    more than the defaults' own seed-to-seed wobble — that is what separates a
+    more than the defaults' own seed-to-seed wobble, that is what separates a
     real edge from a lucky split.
     """
     print(f"\n--- Paired repeated-CV validation ({len(VALIDATION_SEEDS)} seeds) ---")
@@ -135,7 +136,7 @@ def validate(candidates: list[dict], X, y) -> dict:
             best_name, best_delta = name, d.mean()
 
     if best_name is None:
-        print("\n  No candidate robustly beat the defaults — keep chosen.hgb_params = {}.")
+        print("\n  No candidate robustly beat the defaults —> keep chosen.hgb_params = {}.")
         return {}
     chosen = dict(labelled)[best_name]
     print(f"\n  RECOMMENDED ({best_name}, +{best_delta:.4f} macro-F1 on every seed):")
@@ -162,7 +163,7 @@ def main() -> None:
     compare_all(X, y)
     # Deployed-objective view: each baseline at its macro-F1-optimal threshold (the
     # operating point main.py submits at), plus the deployed model itself ("final" =
-    # config.yaml `chosen` = what main.py submits). Produces the report's baseline +
+    # config.yaml 'chosen' = what main.py submits). Produces the report's baseline +
     # final-model numbers and confusion-matrix figures (outputs/figures/cm_<name>_tuned.png,
     # incl. cm_final_tuned.png), all at the deployed seed.
     compare_all_tuned(X, y, models={**get_candidate_models(), "final": build_chosen_model()})

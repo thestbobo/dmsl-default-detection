@@ -1,20 +1,18 @@
-"""Path P14 / external-review item 2 — new feature families on the rf_balanced champion.
+"""New feature families on the rf_balanced champion, kept OUT of main.py.
 
-The 2026-06-21 external LB review found that **feature engineering on RF is the only
-lever cleanly transferring** to the leaderboard: `rf_balanced + payratio` -> 0.716 (best),
-`+util` -> 0.714, `+util_payratio` -> 0.714. This script extends that with genuinely NEW
-signal the current encoding throws away:
+Feature engineering on the random forest is the lever that cleanly transfers to the
+leaderboard. This script screens genuinely new signal the raw encoding throws away:
 
-  * `paysem`  — PAY_* SEMANTIC decomposition. The codes are not a monotone scale
+  * 'paysem'  — PAY_* semantic decomposition. The codes are not a monotone scale
                 (-2 no-consumption, -1 paid-in-full, 0 revolving credit, 1..9 late);
                 we count those states separately + isolate the latest month + a PAY_0>=2
                 flag (the partial-dependence cliff).
-  * `coverx`  — most-recent payment coverage (PAY_AMT1/BILL_AMT2) + coverage trend +
+  * 'coverx'  — most-recent payment coverage (PAY_AMT1/BILL_AMT2) + coverage trend +
                 utilisation trend (the recent-month / trend signal `payratio` lacks).
 
 Each family is screened (OOF macro-F1 at best threshold) on the deployed champion
-`rf_balanced`, then the FULL-dev-fit model is emitted as a numbered submission REGARDLESS
-of the CV verdict — the LB is the judge (review + L1).
+'rf_balanced', then the full-dev-fit model is emitted as a numbered submission
+regardless of the CV verdict — the leaderboard is the judge.
 
     python experiments/feature_families_submit.py            # screen + submit
     python experiments/feature_families_submit.py --no-submit # screen only
@@ -44,7 +42,7 @@ NOSCALE = config.ENCODING_CONFIGS["noscale"]
 RF_PARAMS = config.MODEL_CONFIGS["rf_balanced"]["params"]
 
 # Feature-config names (from config.yaml experiments.feature_configs) to screen + submit.
-# Override on the CLI: `python experiments/feature_families_submit.py paysem_util ...`.
+# Override on the CLI: 'python experiments/feature_families_submit.py paysem_util ...'.
 DEFAULT_CANDIDATES = [
     "paysem",
     "paysem_payratio",

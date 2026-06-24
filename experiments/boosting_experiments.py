@@ -1,19 +1,7 @@
-"""Stronger boosting-library sweep (Path P7) — kept OUT of main.py.
+"""Stronger boosting-library sweep, kept OUT of main.py.
 
-Every zero-dependency path (P1 features, P2 encoding, P3 models, P4 ensembling,
-P5 imbalance, P6 threshold) moved dev CV <0.005 — the sklearn space is at its
-ceiling (~0.7115 CV / 0.713 LB). P7 spends the one remaining high-ceiling lever:
-**LightGBM**, a NEW DEPENDENCY (lightgbm + an OpenMP runtime). Per the project
-rules a new dep is last-resort and must clear a *real leaderboard* gain over the
-deployed `rf_balanced` to justify its install/build risk and 150 s-budget cost —
-a CV-only gain is not enough (Lesson L1).
-
-Protocol = the deployed objective used everywhere else: OOF positive-class
-probabilities, best macro-F1 over the project threshold grid, then paired
-repeated-CV validation across the fixed fold seeds. The anchor here is the
-**deployed champion `rf_balanced`** (not the weaker `hgb`): a candidate only
-matters if it beats what is actually on the leaderboard. `hgb` is printed for
-reference.
+The sklearn estimator space plateaued (the sweeps all moved dev CV by
+<0.005). This script tries another dependency: lightgbm + an OpenMP runtime.
 
 Usage:
     python experiments/boosting_experiments.py
@@ -36,11 +24,11 @@ from src import config  # noqa: E402
 from src.data import load_development, split_xy  # noqa: E402
 from src.models import make_estimator, make_pipeline  # noqa: E402
 
-CHAMPION = "rf_balanced"   # the deployed S4 model every P7 candidate must beat
+CHAMPION = "rf_balanced"   # the deployed model every candidate must beat
 REFERENCE = "hgb"          # printed for context (the original anchor)
 SCREEN_SEED = config.SEED
 VALIDATION_SEEDS = config.VALIDATION_SEEDS
-MIN_DELTA = 0.005          # the L1 "transfers" bar
+MIN_DELTA = 0.005          # the "transfers to the leaderboard" bar
 
 
 def best_threshold_macro_f1(proba: np.ndarray, y) -> tuple[float, float]:
@@ -73,9 +61,9 @@ def _score(spec: dict, X, y, seed: int) -> tuple[float, float]:
 
 def _label(dmean: float, wins: int, n: int) -> str:
     if wins == n and dmean >= MIN_DELTA:
-        return "KEEP (robust, clears L1 bar) -> worth an LB slot"
+        return "KEEP (robust, clears the bar) -> worth an LB slot"
     if wins == n and dmean > 0:
-        return "robust but small (<0.005) -> L1 says LB-gate it"
+        return "robust but small (<0.005) -> LB-gate it"
     if dmean > 0:
         return "watch (not all seeds)"
     return "revert"
@@ -100,7 +88,7 @@ def main() -> None:
     ref_spec = _resolve(REFERENCE)
     cand_specs = {n: _resolve(n) for n in names}
 
-    print(f"\n{'=' * 68}\n  P7 — LIGHTGBM vs deployed {CHAMPION} (seed {SCREEN_SEED})\n{'=' * 68}")
+    print(f"\n{'=' * 68}\n  LIGHTGBM vs deployed {CHAMPION} (seed {SCREEN_SEED})\n{'=' * 68}")
     ref_thr, ref_f1 = _score(ref_spec, X, y, SCREEN_SEED)
     base_thr, base_f1 = _score(champ_spec, X, y, SCREEN_SEED)
     print(f"  {REFERENCE:18s} {ref_f1:.4f} @thr {ref_thr:.3f}   (reference anchor)")
@@ -115,7 +103,7 @@ def main() -> None:
     candidates = {n: s for n, s in cand_specs.items() if screened[n] > base_f1}
     if not candidates:
         print(f"\nNothing beat the deployed {CHAMPION} at the screen seed — "
-              f"no LB-worthy LightGBM config, dependency not justified (L1).")
+              f"no LB-worthy LightGBM config, dependency not justified.")
         return
 
     print(f"\n--- Paired repeated-CV validation ({len(VALIDATION_SEEDS)} seeds) vs {CHAMPION} ---")

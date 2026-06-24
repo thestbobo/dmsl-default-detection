@@ -1,14 +1,14 @@
-"""Central configuration: loads ``config.yaml`` and exposes the project knobs.
+"""Central configuration: loads 'config.yaml' and exposes the project knobs.
 
 The tunable values (seed, CV, threshold grid, column groups, the chosen
-production config, the experiment registry) live in ``config.yaml`` at the repo
-root — that file is the single source of truth. This module loads it once at
+production config, the experiment registry) live in 'config.yaml' at the repo
+root, that file is the single source of truth. This module loads it once at
 import and re-exports the values under the **same names** other modules already
-import (``config.SEED``, ``config.NUMERIC``, ``config.N_SPLITS``, …), so nothing
+import ('config.SEED', 'config.NUMERIC', 'config.N_SPLITS', …), so nothing
 downstream changes.
 
 Things that are *code, not knobs* stay here: repo-relative paths, the
-label/id detection helpers, and ``set_seed``.
+label/id detection helpers, and 'set_seed'.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ import numpy as np
 import yaml
 
 # --------------------------------------------------------------------------- #
-# Paths (anchored at the repository root, i.e. the parent of ``src/``)
+# Paths (anchored at the repository root, i.e. the parent of 'src/')
 # --------------------------------------------------------------------------- #
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -51,8 +51,8 @@ SEED = int(_CFG["seed"])
 def set_seed(seed: int = SEED) -> None:
     """Seed every source of randomness we rely on.
 
-    scikit-learn estimators are seeded explicitly via ``random_state``; this
-    covers the stdlib ``random`` and global NumPy RNG for anything else.
+    scikit-learn estimators are seeded explicitly via 'random_state'; this
+    covers the stdlib 'random' and global NumPy RNG for anything else.
     """
     random.seed(seed)
     np.random.seed(seed)
@@ -75,7 +75,7 @@ THRESHOLDS = np.linspace(float(_TG["start"]), float(_TG["stop"]), int(_TG["num"]
 # Column groups
 # --------------------------------------------------------------------------- #
 _COLS = _CFG["columns"]
-# Categorical (nominal) features — one-hot encoded after folding undocumented codes.
+# Categorical (nominal) features, one-hot encoded after folding undocumented codes.
 CATEGORICAL = list(_COLS["categorical"])
 
 # Repayment status. Documented as -1 / 1..9, but the real data also contains
@@ -97,11 +97,11 @@ FEATURE_COLS = CATEGORICAL + NUMERIC
 # --------------------------------------------------------------------------- #
 # Chosen production config (what main.py trains) + experiment registry
 # --------------------------------------------------------------------------- #
-# The P1 feature-engineering winner and any tuned HGB params live in config.yaml.
+# The chosen engineered-feature groups and any tuned HGB params live in config.yaml.
 CHOSEN_FEATURE_GROUPS: tuple = tuple(_CFG["chosen"].get("feature_groups") or [])
 CHOSEN_HGB_PARAMS: dict = dict(_CFG["chosen"].get("hgb_params") or {})
-# P4: if non-empty, main.py deploys the equal-weight soft-vote of these MODEL_CONFIGS
-# members instead of the single HGB above. Empty -> single HGB (the pre-P4 default).
+# If non-empty, main.py deploys these MODEL_CONFIGS members: one entry -> that single
+# estimator, several -> their equal-weight soft-vote. Empty -> the single HGB above.
 CHOSEN_ENSEMBLE: list[str] = list(_CFG["chosen"].get("ensemble") or [])
 
 # Named feature-group configs swept by experiments/feature_experiments.py.
@@ -111,11 +111,11 @@ FEATURE_CONFIGS: dict[str, list[str]] = {
 }
 
 # --------------------------------------------------------------------------- #
-# Encoding / preprocessing knobs (Path P2)
+# Encoding / preprocessing knobs
 # --------------------------------------------------------------------------- #
 # Canonical shape of an encoding spec. config.yaml entries may be partial; they are
 # merged onto these defaults so every spec is complete. The defaults reproduce the
-# E00 baseline encoding (scale on, raw columns).
+# baseline encoding (scale on, raw columns).
 ENCODING_DEFAULTS: dict = {
     "pay_remap": False,   # fold PAY_* {-2,-1,0} -> 0 (monotone "months delinquent")
     "pay_flags": False,   # append per-month IS_DELINQ_PAY_* binaries
@@ -130,7 +130,7 @@ def normalize_encoding(spec) -> dict:
     return {**ENCODING_DEFAULTS, **(spec or {})}
 
 
-# Encoding spec for the deployed HGB (config.yaml `chosen.encoding`).
+# Encoding spec for the deployed model (config.yaml 'chosen.encoding').
 CHOSEN_ENCODING: dict = normalize_encoding(_CFG["chosen"].get("encoding"))
 
 # Named encoding variants swept by experiments/encoding_experiments.py.
@@ -140,47 +140,40 @@ ENCODING_CONFIGS: dict[str, dict] = {
 }
 
 # --------------------------------------------------------------------------- #
-# Model / ensemble registries (Path P3 / P4)
+# Model / ensemble registries
 # --------------------------------------------------------------------------- #
 # Named model specs ({kind, params, encoding-variant-name}) swept by
-# experiments/model_experiments.py; the script resolves `kind` -> estimator class and
-# `encoding` -> ENCODING_CONFIGS[name]. Left as raw dicts (estimator construction is
-# code, not a knob) — mirrors how encoding_experiments.build_estimator maps kinds.
+# experiments/model_experiments.py; the script resolves 'kind' -> estimator class and
+# 'encoding' -> ENCODING_CONFIGS[name]. Left as raw dicts (estimator construction is
+# code, not a knob).
 MODEL_CONFIGS: dict[str, dict] = dict(
     _CFG.get("experiments", {}).get("model_configs", {}) or {}
 )
 
 # Named equal-weight soft-vote ensembles (lists of MODEL_CONFIGS names) previewed by
-# experiments/model_experiments.py — the P3 -> P4 bridge.
+# experiments/model_experiments.py.
 ENSEMBLE_CONFIGS: dict[str, list[str]] = {
     name: list(members or [])
     for name, members in (_CFG.get("experiments", {}).get("ensemble_configs", {}) or {}).items()
 }
 
 # Named class-weight / loss-reweighting configs swept by
-# experiments/imbalance_experiments.py (Path P5). Each entry points at a base
-# MODEL_CONFIGS member and overrides estimator params.
+# experiments/imbalance_experiments.py. Each entry points at a base MODEL_CONFIGS
+# member and overrides estimator params.
 IMBALANCE_CONFIGS: dict[str, dict] = dict(
     _CFG.get("experiments", {}).get("imbalance_configs", {}) or {}
 )
 
 # Named LightGBM (boosting-library) configs swept by
-# experiments/boosting_experiments.py (Path P7). Same {kind, params, encoding} shape
-# as MODEL_CONFIGS; `kind: lgbm` resolves to the lazy LGBMClassifier factory.
+# experiments/boosting_experiments.py. Same {kind, params, encoding} shape as
+# MODEL_CONFIGS; 'kind: lgbm' resolves to the lazy LGBMClassifier factory.
 BOOSTING_CONFIGS: dict[str, dict] = dict(
     _CFG.get("experiments", {}).get("boosting_configs", {}) or {}
 )
 
-# Named STACKING configs swept by experiments/stacking_experiments.py (Path P8).
-# Each entry: `members` (list of MODEL_CONFIGS names, each a full encoded pipeline),
-# `meta` (final-estimator key resolved by the script), optional `passthrough`.
-STACKING_CONFIGS: dict[str, dict] = dict(
-    _CFG.get("experiments", {}).get("stacking_configs", {}) or {}
-)
-
-# Named RESAMPLING configs swept by experiments/resampling_experiments.py (Path P10,
-# NEW DEP imbalanced-learn). Each entry: `base_model` (a MODEL_CONFIGS name) + `sampler`
-# (resolved to an imblearn resampler by the script).
+# Named resampling configs swept by experiments/resampling_experiments.py (optional
+# dependency: imbalanced-learn). Each entry: 'base_model' (a MODEL_CONFIGS name) +
+# 'sampler' (resolved to an imblearn resampler by the script).
 RESAMPLING_CONFIGS: dict[str, dict] = dict(
     _CFG.get("experiments", {}).get("resampling_configs", {}) or {}
 )
@@ -188,8 +181,8 @@ RESAMPLING_CONFIGS: dict[str, dict] = dict(
 # --------------------------------------------------------------------------- #
 # Label / id detection
 # --------------------------------------------------------------------------- #
-# The development set may name the target ``label`` (DSLE export) or
-# ``default.payment.next.month`` (original UCI naming).
+# The development set may name the target 'label' (DSLE export) or
+# 'default.payment.next.month' (original UCI naming).
 LABEL_CANDIDATES = ["label", "default.payment.next.month"]
 
 
@@ -214,7 +207,7 @@ def detect_label_col(df) -> str:
 
 
 def detect_id_col(df) -> str:
-    """Return the name of the id column (``id``/``ID``), raising if absent."""
+    """Return the name of the id column ('id'/'ID'), raising if absent."""
     col = _find_col(df.columns, ["id"])
     if col is None:
         raise KeyError(

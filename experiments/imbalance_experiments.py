@@ -1,11 +1,11 @@
-"""Imbalance-handling sweep (Path P5) — kept OUT of main.py.
+"""Imbalance-handling sweep, kept OUT of main.py.
 
 The leaderboard metric is macro-F1, so minority recall matters. We already tune
 the decision threshold, which is the safest imbalance lever. This script tests
-the next zero-dependency option: changing the fitted loss with ``class_weight``.
+the next option: changing the fitted loss with 'class_weight'.
 
-Each candidate in ``config.yaml -> experiments.imbalance_configs`` starts from a
-named ``model_configs`` entry (usually the HGB anchor or RF) and overrides only
+Each candidate in 'config.yaml -> experiments.imbalance_configs' starts from a
+named 'model_configs' entry (usually the HGB anchor or RF) and overrides only
 estimator params. The scoring protocol is the deployed objective used everywhere
 else: OOF probabilities, best macro-F1 over the project threshold grid, then
 paired repeated-CV validation across the fixed fold seeds.
@@ -45,7 +45,7 @@ def best_threshold_macro_f1(proba: np.ndarray, y) -> tuple[float, float]:
 
 
 def _merged_spec(candidate: dict) -> dict:
-    """Resolve a P5 candidate onto its base model spec."""
+    """Resolve a candidate onto its base model spec."""
     base_name = candidate["base_model"]
     if base_name not in config.MODEL_CONFIGS:
         raise ValueError(f"unknown base_model {base_name!r}; known: {list(config.MODEL_CONFIGS)}")
@@ -96,7 +96,7 @@ def main() -> None:
     anchor_spec = config.MODEL_CONFIGS[ANCHOR]
     cand_specs = {n: _merged_spec(config.IMBALANCE_CONFIGS[n]) for n in names}
 
-    print(f"\n{'=' * 64}\n  P5 — IMBALANCE HANDLING (class_weight, seed {SCREEN_SEED})\n{'=' * 64}")
+    print(f"\n{'=' * 64}\n  IMBALANCE HANDLING (class_weight, seed {SCREEN_SEED})\n{'=' * 64}")
     base_thr, base_f1 = _score(anchor_spec, X, y, SCREEN_SEED)
     print(f"  {ANCHOR:14s} {base_f1:.4f} @thr {base_thr:.3f}   (anchor)")
 

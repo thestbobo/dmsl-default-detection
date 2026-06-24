@@ -3,22 +3,22 @@
 Four pieces, all leakage-free because they are stateless row-wise mappings
 (or live inside the estimator Pipeline and so are fit on training folds only):
 
-1. ``CodeFolder`` — folds the undocumented categorical codes into the
+1. 'CodeFolder': folds the undocumented categorical codes into the
    documented "other" buckets. A *stateless, deterministic* domain mapping.
 
-2. ``add_engineered_features`` / ``make_feature_engineer`` — appends row-wise
+2. add_engineered_features' / 'make_feature_engineer': appends row-wise
    aggregates of the repayment history (delinquency, utilisation, payment
    coverage, bill dynamics). Each feature is a pure function of a single row's
    own columns, so it is leakage-free and identical on train and eval. Which
-   families are added is controlled by ``groups`` (see ``ENGINEERED_COLUMNS``),
+   families are added is controlled by 'groups' (see 'ENGINEERED_COLUMNS'),
    so configs are additive, toggleable and reversible.
 
-3. ``apply_encoding`` / ``make_encoder`` — re-expresses the raw model columns
+3. 'apply_encoding' / 'make_encoder': re-expresses the raw model columns
    (PAY_* remap, signed log1p on monetary cols, negative-BILL handling) per a
-   declarative ``encoding`` spec (Path P2). Stateless row-wise rewrites, so also
+   declarative 'encoding' spec. Stateless row-wise rewrites, so also
    leakage-free; toggleable and reversible like the feature groups.
 
-4. ``build_preprocessor`` — a ``ColumnTransformer`` that imputes (+ optionally
+4. 'build_preprocessor': a 'ColumnTransformer' that imputes (+ optionally
    scales) the numeric columns (incl. any engineered / encoding-flag ones) and
    imputes + one-hot-encodes the (cleaned) categoricals. Because it lives inside
    the estimator Pipeline, it is *fit on training folds only* during
@@ -29,9 +29,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.compose import ColumnTransformer
-from sklearn.ensemble import IsolationForest
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import FunctionTransformer, OneHotEncoder, StandardScaler
@@ -65,8 +63,8 @@ def make_code_folder() -> FunctionTransformer:
 # Engineered features
 # --------------------------------------------------------------------------- #
 # Registry: group name -> the exact column names it produces (order matters so
-# ``build_preprocessor`` can select them by name). Each family is one isolated
-# experiment in docs/experiment_log.md.
+# 'build_preprocessor' can select them by name). Each family is one isolated,
+# toggleable experiment swept by experiments/feature_experiments.py.
 ENGINEERED_COLUMNS: dict[str, list[str]] = {
     # PAY_* delinquency aggregates (PAY_0 = most recent month ... PAY_6 = oldest).
     "pay": [
@@ -96,12 +94,12 @@ ENGINEERED_COLUMNS: dict[str, list[str]] = {
         "REM_CREDIT_LAST",  # LIMIT_BAL - BILL_AMT1
         "REM_CREDIT_MEAN",  # LIMIT_BAL - mean(BILL)
     ],
-    # PAY_* SEMANTIC decomposition (2026-06-21 external review). The repayment codes
-    # are NOT a clean monotone scale: -2 = no consumption, -1 = paid in full,
-    # 0 = revolving credit (carrying a balance — a genuinely riskier state than -1/-2),
-    # 1..9 = months of payment delay. The existing `pay`/`pay_remap` collapse {-2,-1,0}
-    # into one "not late" bucket, discarding the revolving-vs-paid-in-full distinction.
-    # This family keeps those three states separate and isolates the most-recent month.
+    # PAY_* semantic decomposition. The repayment codes are NOT a clean monotone
+    # scale: -2 = no consumption, -1 = paid in full, 0 = revolving credit (carrying a
+    # balance — a genuinely riskier state than -1/-2), 1..9 = months of payment delay.
+    # The 'pay'/'pay_remap' families collapse {-2,-1,0} into one "not late" bucket,
+    # discarding the revolving-vs-paid-in-full distinction. This family keeps those
+    # three states separate and isolates the most-recent month.
     "paysem": [
         "PAY_N_REVOLVING",  # # months carrying a revolving balance (PAY == 0)
         "PAY_N_PAIDFULL",   # # months paid in full (PAY == -1)
@@ -110,18 +108,19 @@ ENGINEERED_COLUMNS: dict[str, list[str]] = {
         "PAY0_REVOLVING",   # latest month is revolving credit (PAY_0 == 0)
         "PAY0_PAIDFULL",    # latest month paid in full (PAY_0 == -1)
     ],
-    # Recent-month payment coverage + trend (external review item 2). `payratio` only
-    # has the *mean* coverage across months; the most-recent coverage (PAY_AMT1 vs the
-    # previous statement BILL_AMT2) and its trend vs the oldest month carry extra signal.
+    # Recent-month payment coverage + trend. 'payratio' only has the *mean* coverage
+    # across months; the most-recent coverage (PAY_AMT1 vs the previous statement
+    # BILL_AMT2) and its trend vs the oldest month carry extra signal.
     "coverx": [
         "COVER_RECENT",  # PAY_AMT1 / BILL_AMT2 (latest payment vs prior bill)
         "COVER_TREND",   # recent coverage - oldest coverage (improving/worsening)
         "UTIL_TREND",    # latest utilisation - oldest utilisation (BILL/LIMIT)
     ],
-    # Per-MONTH utilisation (BILL_AMT_t / LIMIT_BAL) — RF reads explicit ratios HGB ignores
-    # (L13), so giving it the ratio per month (not just mean/max/last as in `util`) may help.
+    # Per-month utilisation (BILL_AMT_t / LIMIT_BAL) — a random forest reads explicit
+    # ratios directly, so giving it the ratio per month (not just mean/max/last as in
+    # 'util') may add signal.
     "utilmonths": ["UTIL_1", "UTIL_2", "UTIL_3", "UTIL_4", "UTIL_5", "UTIL_6"],
-    # Per-MONTH same-month payment ratio (PAY_AMT_t / BILL_AMT_t) — granular `payratio`.
+    # Per-MONTH same-month payment ratio (PAY_AMT_t / BILL_AMT_t), granular 'payratio'.
     "payamtratio": ["PAYR_1", "PAYR_2", "PAYR_3", "PAYR_4", "PAYR_5", "PAYR_6"],
     # Credit-stress interactions: high utilisation AND delinquency together is the worst
     # combination, an interaction an axis-aligned tree can't form from the raw columns.
@@ -130,7 +129,7 @@ ENGINEERED_COLUMNS: dict[str, list[str]] = {
         "STRESS_MAXPAY_UTIL",  # worst delinquency * mean utilisation
         "STRESS_CURR",         # max(PAY_0,0) * latest utilisation
     ],
-    # Richer PAY DYNAMICS — distinct from `paysem` counts: trajectory of the delinquency,
+    # Richer PAY DYNAMICS — distinct from 'paysem' counts: trajectory of the delinquency,
     # not just how many months in each state. Recovery/escalation/recent-vs-old carry signal
     # about *direction*, which is what predicts next-month default.
     "paysem2": [
@@ -144,7 +143,7 @@ ENGINEERED_COLUMNS: dict[str, list[str]] = {
 
 
 def engineered_feature_names(groups) -> list[str]:
-    """Flat list of engineered column names produced by ``groups`` (in order)."""
+    """Flat list of engineered column names produced by 'groups' (in order)."""
     names: list[str] = []
     for g in groups:
         names.extend(ENGINEERED_COLUMNS[g])
@@ -153,7 +152,7 @@ def engineered_feature_names(groups) -> list[str]:
 
 def _safe_ratio(num: np.ndarray, den: np.ndarray, valid: np.ndarray,
                 fallback: float) -> np.ndarray:
-    """num/den where ``valid``, else ``fallback`` — never divides by zero."""
+    """num/den where 'valid', else 'fallback', never divides by zero."""
     den_safe = np.where(valid, den, 1.0)
     return np.where(valid, num / den_safe, fallback)
 
@@ -169,10 +168,10 @@ def _longest_late_streak(late: np.ndarray) -> np.ndarray:
 
 
 def add_engineered_features(X: pd.DataFrame, groups=()) -> pd.DataFrame:
-    """Append the requested engineered-feature families to ``X``.
+    """Append the requested engineered-feature families to 'X'.
 
-    ``groups`` is an iterable of names from :data:`ENGINEERED_COLUMNS`. With no
-    groups this is a no-op (the E00 baseline). Every feature is a pure row-wise
+    'groups' is an iterable of names from :data:'ENGINEERED_COLUMNS'. With no
+    groups this is a no-op (the raw-feature baseline). Every feature is a pure row-wise
     function of the client's own columns, so it is leakage-free. Divide-by-zero is
     guarded with safe denominators; any residual non-finite value is set to NaN
     and imputed (median) inside the Pipeline on training folds only.
@@ -282,14 +281,14 @@ def make_feature_engineer(groups) -> FunctionTransformer:
 
 
 # --------------------------------------------------------------------------- #
-# Encoding / preprocessing variants (Path P2)
+# Encoding / preprocessing variants
 # --------------------------------------------------------------------------- #
 # Re-express the raw model columns so the scale/ordinality is cleaner. Like the
-# feature-engineering trio above, these are *stateless* row-wise rewrites: a pure
+# feature-engineering families above, these are *stateless* row-wise rewrites: a pure
 # function of each client's own columns, identical on train and eval, so they are
 # leakage-free and live inside the Pipeline. Each effect is gated by a toggle in an
-# ``encoding`` spec (see ``config.ENCODING_DEFAULTS``); the deliverable is judged on
-# BOTH HGB (a tree is invariant to monotone rescaling — L5) and LogReg.
+# 'encoding' spec (see 'config.ENCODING_DEFAULTS'). A monotone rescaling is a
+# no-op for trees but matters for the linear model, so variants are screened on both.
 
 # Monetary columns compressed by the signed-log1p knob (AGE is not money, excluded).
 MONETARY_COLS: list[str] = ["LIMIT_BAL"] + list(config.BILL_COLS) + list(config.PAY_AMT_COLS)
@@ -303,10 +302,10 @@ def _signed_log1p(a: np.ndarray) -> np.ndarray:
 def encoding_extra_columns(encoding) -> list[str]:
     """Flat list of *appended* column names produced by an encoding spec (in order).
 
-    Only the column-adding knobs contribute (``pay_flags`` and ``bill_neg: flag``);
-    in-place rewrites (``pay_remap``, ``log1p``, ``bill_neg: clip``) add nothing.
-    ``build_preprocessor`` routes these through the numeric pipe, exactly like the
-    engineered features. Mirrors :func:`engineered_feature_names`.
+    Only the column-adding knobs contribute ('pay_flags' and 'bill_neg: flag');
+    in-place rewrites ('pay_remap', 'log1p', 'bill_neg: clip') add nothing.
+    'build_preprocessor' routes these through the numeric pipe, exactly like the
+    engineered features. Mirrors 'engineered_feature_names'.
     """
     if not encoding:
         return []
@@ -319,23 +318,23 @@ def encoding_extra_columns(encoding) -> list[str]:
 
 
 def apply_encoding(X: pd.DataFrame, encoding=None) -> pd.DataFrame:
-    """Re-encode the raw columns per an ``encoding`` spec (stateless, leakage-free).
+    """Re-encode the raw columns per an 'encoding' spec (stateless, leakage-free).
 
     Rewrites happen in a fixed order so toggles compose deterministically:
 
-    1. ``pay_remap`` — fold PAY_* ``{-2,-1,0} -> 0``, keep ``1..9`` (``max(PAY,0)``):
+    1. 'pay_remap' — fold PAY_* '{-2,-1,0} -> 0', keep '1..9' ('max(PAY,0)'):
        a clean monotone "months delinquent" ordinal.
-    2. ``pay_flags`` — append per-month ``IS_DELINQ_PAY_*`` = ``(PAY >= 1)`` binaries
+    2. 'pay_flags' — append per-month 'IS_DELINQ_PAY_*' = '(PAY >= 1)' binaries
        (the delinquency signal the remap collapses; mainly for the linear model).
-    3. ``bill_neg`` — negative BILL_AMT is an overpayment / credit balance:
-       ``clip`` -> ``max(BILL,0)`` ("nothing owed", matching the BILL<=0 handling in
-       ``add_engineered_features``); ``flag`` -> append ``OVERPAY_BILL_*`` = ``(BILL<0)``
-       (BILL left intact); ``keep`` -> no-op.
-    4. ``log1p`` — signed ``log1p`` on :data:`MONETARY_COLS` (after any clip), to
+    3. 'bill_neg' — negative BILL_AMT is an overpayment / credit balance:
+       'clip' -> 'max(BILL,0)' ("nothing owed", matching the BILL<=0 handling in
+       'add_engineered_features'); 'flag' -> append 'OVERPAY_BILL_*' = '(BILL<0)'
+       (BILL left intact); 'keep' -> no-op.
+    4. 'log1p' — signed 'log1p' on 'MONETARY_COLS' (after any clip), to
        compress heavy tails and keep negative balances.
 
-    With ``encoding`` falsy / all-default this is a no-op (the E00 baseline). The
-    ``scale`` knob is handled in :func:`build_preprocessor`, not here.
+    With 'encoding' falsy / all-default this is a no-op (the raw-feature baseline).
+    The 'scale' knob is handled in 'build_preprocessor', not here.
     """
     if not encoding:
         return X
@@ -371,51 +370,13 @@ def make_encoder(encoding) -> FunctionTransformer:
     return FunctionTransformer(apply_encoding, kw_args={"encoding": dict(encoding or {})})
 
 
-class AnomalyScorer(BaseEstimator, TransformerMixin):
-    """Append an unsupervised IsolationForest anomaly score as a new feature (Path P9).
-
-    Stateful — unlike the row-wise engineered features it must be *fit*, so it lives at
-    the end of the Pipeline (after ``build_preprocessor``, on the fully numeric, imputed,
-    one-hot matrix). Inside ``cross_val_predict`` it is fit on training folds only, so the
-    score is leakage-free. ``transform`` returns ``[X | -score_samples(X)]`` (higher =
-    more anomalous), the single extra column the downstream model sees.
-
-    Hypothesis (NotebookLM): defaulting is "anomalous" behaviour, so how far a client's
-    pattern deviates from the norm could be a useful summary feature. Tested CV-first; on
-    this data L5/L6 (a tree already extracts what features encode) make a real win
-    unlikely, but it is zero-dependency and cheap to screen.
-    """
-
-    def __init__(self, n_estimators: int = 200, max_samples: str | int | float = "auto",
-                 contamination: str | float = "auto", random_state: int | None = None):
-        self.n_estimators = n_estimators
-        self.max_samples = max_samples
-        self.contamination = contamination
-        self.random_state = random_state
-
-    def fit(self, X, y=None):
-        self.iforest_ = IsolationForest(
-            n_estimators=self.n_estimators,
-            max_samples=self.max_samples,
-            contamination=self.contamination,
-            random_state=self.random_state if self.random_state is not None else config.SEED,
-            n_jobs=-1,
-        ).fit(np.asarray(X))
-        return self
-
-    def transform(self, X):
-        X = np.asarray(X)
-        score = -self.iforest_.score_samples(X)  # higher = more anomalous
-        return np.hstack([X, score[:, None]])
-
-
 def build_preprocessor(extra_numeric=(), scale: bool = True) -> ColumnTransformer:
     """ColumnTransformer: numeric (impute [+ scale]) and categorical (impute+one-hot).
 
-    ``extra_numeric`` are engineered / encoding-flag column names routed through the
+    'extra_numeric' are engineered / encoding-flag column names routed through the
     same numeric pipe. Imputation guards against unexpected missing values (incl. NaNs
-    produced by guarded division). ``scale`` gates ``StandardScaler``: keep it for
-    linear models, drop it for trees where it is a no-op (Path P2 / Lesson L5).
+    produced by guarded division). 'scale' gates 'StandardScaler': keep it for
+    linear models, drop it for trees where it is a no-op.
     """
     numeric_cols = list(config.NUMERIC) + list(extra_numeric)
     numeric_steps = [("impute", SimpleImputer(strategy="median"))]
