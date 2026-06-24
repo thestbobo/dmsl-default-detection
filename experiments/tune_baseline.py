@@ -43,7 +43,7 @@ from sklearn.model_selection import StratifiedKFold, cross_val_predict  # noqa: 
 
 from src import config  # noqa: E402
 from src.data import load_development, split_xy  # noqa: E402
-from src.evaluate import compare_all  # noqa: E402
+from src.evaluate import compare_all, compare_all_tuned  # noqa: E402
 from src.models import make_pipeline  # noqa: E402
 
 # Threshold grid + fold seeds come from config.yaml (defined once, project-wide).
@@ -160,6 +160,10 @@ def main() -> None:
     print(f"Class balance: {y.value_counts(normalize=True).round(3).to_dict()}")
 
     compare_all(X, y)
+    # Deployed-objective view: each baseline at its macro-F1-optimal threshold (the
+    # operating point main.py submits at). Produces the report's baseline numbers +
+    # confusion-matrix figure (outputs/figures/cm_<name>_tuned.png).
+    compare_all_tuned(X, y)
     tune_hgb(X, y)
 
 

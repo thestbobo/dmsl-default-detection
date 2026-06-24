@@ -19,6 +19,7 @@ import seaborn as sns
 from sklearn.metrics import (
     classification_report,
     confusion_matrix,
+    f1_score,
     roc_auc_score,
 )
 from sklearn.model_selection import StratifiedKFold, cross_val_predict, cross_val_score
@@ -89,6 +90,87 @@ def cross_validate_model(name: str, pipeline, X, y, save_fig: bool = True) -> di
         "confusion_matrix": cm,
         "figure": fig_path,
     }
+
+
+def _best_macro_f1_threshold(proba: np.ndarray, y) -> tuple[float, float]:
+    """Threshold on the config grid that maximises macro-F1 on OOF probabilities.
+
+    This is the *deployed objective*: main.py submits behind
+    ``TunedThresholdClassifierCV(scoring="f1_macro")``, so the honest report metrics
+    are taken at the macro-F1-optimal cut, not the arbitrary 0.5 one.
+    """
+    f1s = [f1_score(y, (proba >= t).astype(int), average="macro") for t in config.THRESHOLDS]
+    i = int(np.argmax(f1s))
+    return float(config.THRESHOLDS[i]), float(f1s[i])
+
+
+def cross_validate_tuned(name: str, pipeline, X, y, save_fig: bool = True) -> dict:
+    """Like :func:`cross_validate_model` but at the tuned (deployed) threshold.
+
+    Computes OOF probabilities once, picks the macro-F1-optimal threshold, and reports
+    the confusion matrix + per-class precision/recall/F1 *there* — so the figure and
+    metrics match the operating point main.py actually submits at. ROC-AUC is
+    threshold-independent. The figure is saved as ``cm_<name>_tuned.png`` (the 0.5-cut
+    ``cm_<name>.png`` from :func:`cross_validate_model` is left untouched).
+    """
+    cv = _make_cv()
+    proba = cross_val_predict(pipeline, X, y, cv=cv, method="predict_proba")[:, 1]
+    threshold, macro_f1 = _best_macro_f1_threshold(proba, y)
+    y_pred = (proba >= threshold).astype(int)
+
+    roc_auc = roc_auc_score(y, proba)
+    report = classification_report(
+        y, y_pred, target_names=CLASS_NAMES, output_dict=True, zero_division=0
+    )
+    cm = confusion_matrix(y, y_pred)
+    fig_path = _save_confusion_matrix(f"{name}_tuned", cm) if save_fig else None
+
+    return {
+        "name": name,
+        "threshold": threshold,
+        "macro_f1": macro_f1,
+        "roc_auc": float(roc_auc),
+        "report": report,
+        "confusion_matrix": cm,
+        "figure": fig_path,
+    }
+
+
+def _print_tuned_report(res: dict) -> None:
+    rep = res["report"]
+    print(f"\n=== {res['name']} (tuned threshold {res['threshold']:.3f}) ===")
+    print(f"  macro-F1 : {res['macro_f1']:.4f}  (deployed objective, OOF)")
+    print(f"  ROC-AUC  : {res['roc_auc']:.4f}")
+    for cls in CLASS_NAMES:
+        m = rep[cls]
+        print(
+            f"  {cls:>16}: precision={m['precision']:.3f} "
+            f"recall={m['recall']:.3f} f1={m['f1-score']:.3f}"
+        )
+    if res["figure"]:
+        print(f"  confusion matrix saved -> {res['figure']}")
+
+
+def compare_all_tuned(X, y, models: dict | None = None) -> dict[str, dict]:
+    """Deployed-objective (tuned-threshold) comparison of the candidate baselines.
+
+    Apples-to-apples counterpart to :func:`compare_all`: every model is scored at its
+    own macro-F1-optimal threshold, which is the fair comparison given the deployed
+    threshold tuner. Produces the baseline numbers + confusion-matrix figure used in
+    the report.
+    """
+    models = models or get_candidate_models()
+    results = {name: cross_validate_tuned(name, pipe, X, y) for name, pipe in models.items()}
+
+    for res in results.values():
+        _print_tuned_report(res)
+
+    print("\n--- Macro-F1 ranking (tuned threshold, deployed objective) ---")
+    ranked = sorted(results.values(), key=lambda r: r["macro_f1"], reverse=True)
+    for res in ranked:
+        print(f"  {res['macro_f1']:.4f} @thr {res['threshold']:.3f}  {res['name']}")
+
+    return results
 
 
 def _print_model_report(res: dict) -> None:
