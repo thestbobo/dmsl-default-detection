@@ -1,16 +1,9 @@
-"""Shared helpers for generating numbered candidate submissions.
+"""Shared helpers for the experiment sweeps and numbered candidate submissions.
 
-Development CV is a weak, pessimistic predictor of the public leaderboard on this
-data: a CV-neutral change can move the leaderboard in either direction. So instead of
-pre-filtering candidates on CV, we generate several and upload them for the leaderboard
-to rank.
-
-Every candidate is written to ``outputs/submissions/submission_<N>.csv`` (sequential,
-never clobbering the deployed ``submission.csv``) and logged to a local
-``outputs/submissions/MANIFEST.md`` so each numbered file is traceable to its config.
-
-Reuses the production submission writer/validator (src/submission.py) and the model
-factory (src/models.py) so candidates are byte-compatible with what main.py would ship.
+Dev CV is a weak predictor of the public leaderboard here, so instead of pre-filtering
+on CV we generate several candidates and upload them. Each is written to
+outputs/submissions/submission_<N>.csv (never clobbering the deployed submission.csv)
+and logged to outputs/submissions/MANIFEST.md.
 """
 
 from __future__ import annotations
@@ -27,7 +20,10 @@ from sklearn.metrics import f1_score  # noqa: E402
 from sklearn.model_selection import StratifiedKFold, cross_val_predict  # noqa: E402
 
 from src import config  # noqa: E402
-from src.submission import validate_submission, write_submission  # noqa: E402
+from src.data import validate_submission, write_submission  # noqa: E402
+
+# Mean macro-F1 gain that marks a robust win rather than noise (shared by the sweeps).
+MIN_DELTA = 0.005
 
 MANIFEST = config.OUT_SUB_DIR / "MANIFEST.md"
 _MANIFEST_HEADER = (
@@ -47,12 +43,22 @@ def best_threshold_macro_f1(proba: np.ndarray, y) -> tuple[float, float]:
     return float(config.THRESHOLDS[i]), float(f1s[i])
 
 
+def verdict(dmean: float, wins: int, n: int) -> str:
+    """Label a candidate from its paired-CV result (wins on every seed + mean gain)."""
+    if wins == n and dmean >= MIN_DELTA:
+        return "KEEP (robust)"
+    if wins == n and dmean > 0:
+        return "keep? (robust but small)"
+    if dmean > 0:
+        return "watch (not all seeds)"
+    return "revert"
+
+
 def oof_proba(pipeline, X, y, seed: int = config.SEED, cv_n_jobs: int = -1) -> np.ndarray:
     """Out-of-fold positive-class probabilities (deployed CV protocol).
 
-    ``cv_n_jobs`` parallelises across folds. Set it to 1 when the estimator itself
-    already parallelises (RF/ET with ``n_jobs=-1``): nesting a parallel estimator inside
-    a parallel CV oversubscribes the cores and is dramatically slower.
+    Set cv_n_jobs=1 when the estimator already parallelises (RF/ET with n_jobs=-1), so
+    a parallel estimator inside a parallel CV does not oversubscribe the cores.
     """
     cv = StratifiedKFold(n_splits=config.N_SPLITS, shuffle=True, random_state=seed)
     return cross_val_predict(
@@ -61,13 +67,13 @@ def oof_proba(pipeline, X, y, seed: int = config.SEED, cv_n_jobs: int = -1) -> n
 
 
 def fit_eval_proba(model, X, y, X_eval) -> np.ndarray:
-    """Fit ``model`` on the FULL development set, return eval positive-class proba."""
+    """Fit the model on the full development set, return eval positive-class proba."""
     model.fit(X, y)
     return model.predict_proba(X_eval)[:, 1]
 
 
 def next_submission_number() -> int:
-    """Next free N for ``submission_<N>.csv`` in the submissions folder."""
+    """Next free N for submission_<N>.csv in the submissions folder."""
     nums = []
     for p in config.OUT_SUB_DIR.glob("submission_*.csv"):
         stem = p.stem.split("_", 1)[1]
@@ -80,7 +86,7 @@ def _append_manifest(n: int, default_rate: float, oof_f1, description: str) -> N
     if not MANIFEST.exists():
         MANIFEST.parent.mkdir(parents=True, exist_ok=True)
         MANIFEST.write_text(_MANIFEST_HEADER)
-    f1_str = f"{oof_f1:.4f}" if oof_f1 is not None else "—"
+    f1_str = f"{oof_f1:.4f}" if oof_f1 is not None else "-"
     row = (
         f"| {n} | {date.today().isoformat()} | {default_rate:.1%} | {f1_str} | "
         f"{description} |  |\n"

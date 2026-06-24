@@ -1,4 +1,4 @@
-# Project configuration — the single source of truth for tunable knobs.
+# Project configuration: the single source of truth for tunable knobs.
 #
 # src/config.py loads this file once at import and exposes the values as the
 # same module-level names other code already imports (config.SEED, config.NUMERIC,
@@ -89,8 +89,8 @@ experiments:
 
   # Named ENCODING variants swept by experiments/encoding_experiments.py.
   # Each value is an encoding spec (toggles); partial specs are merged onto
-  # ENCODING_DEFAULTS in src/config.py. Every variant changes ONE thing vs `baseline`
-  # (except the deliberate `clean_linear` combo), so its effect is isolated. Screened on
+  # ENCODING_DEFAULTS in src/config.py. Every variant changes ONE thing vs baseline
+  # (except the deliberate clean_linear combo), so its effect is isolated. Screened on
   # both hgb and logreg, a monotone rescaling is a no-op for the tree but matters for
   # the linear model.
   encoding_configs:

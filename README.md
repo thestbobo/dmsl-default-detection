@@ -1,6 +1,6 @@
 # Credit-Card Default Detection
 
-Predict whether a credit-card client will **default** on next month's payment — a
+Predict whether a credit-card client will **default** on next month's payment, a
 binary classification task on the UCI *"default of credit card clients"* dataset
 (30,000 clients, split into a 24,000-client development set and a 6,000-client
 evaluation set). The classes are imbalanced (~22% defaulters), so the model is
@@ -17,8 +17,8 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Place the three dataset files — `development.csv`, `evaluation.csv` and
-`sample_submission.csv` — in `data/raw/`. The dataset is not committed; the download
+Place the three dataset files (`development.csv`, `evaluation.csv` and
+`sample_submission.csv`) in `data/raw/`. The dataset is not committed; the download
 link is in the assignment PDF under `docs/`.
 
 ## Run

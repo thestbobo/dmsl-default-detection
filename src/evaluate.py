@@ -1,10 +1,8 @@
 """Cross-validation and metric reporting for the candidate models.
 
-This module produces the numbers and figures that go into the report. It is
-*not* imported by main.py (CV is kept out of the 150 s submission path).
-
-Primary metric is macro-F1; we also report per-class precision/recall/F1,
-ROC-AUC, and a saved confusion-matrix figure per model.
+Produces the report's numbers and figures (macro-F1, per-class precision/recall/F1,
+ROC-AUC, confusion-matrix figures). Not imported by main.py, CV stays out of the 150 s
+submission path.
 """
 
 from __future__ import annotations
@@ -54,7 +52,7 @@ def _save_confusion_matrix(name: str, cm: np.ndarray) -> str:
     )
     ax.set_xlabel("Predicted")
     ax.set_ylabel("True")
-    ax.set_title(f"Confusion matrix — {name}")
+    ax.set_title(f"Confusion matrix: {name}")
     fig.tight_layout()
     fig.savefig(path, dpi=150)
     plt.close(fig)
@@ -62,13 +60,9 @@ def _save_confusion_matrix(name: str, cm: np.ndarray) -> str:
 
 
 def cross_validate_model(name: str, pipeline, X, y, save_fig: bool = True) -> dict:
-    """Run StratifiedKFold CV for one model and return a metrics dict."""
+    """StratifiedKFold CV for one model at the 0.5 threshold; returns a metrics dict."""
     cv = _make_cv()
-
-    # Per-fold macro-F1 (primary metric) -> mean +/- std.
     f1_folds = cross_val_score(pipeline, X, y, scoring="f1_macro", cv=cv, n_jobs=None)
-
-    # Out-of-fold probabilities for ROC-AUC; labels via the 0.5 threshold.
     proba = cross_val_predict(pipeline, X, y, cv=cv, method="predict_proba")[:, 1]
     y_pred = (proba >= 0.5).astype(int)
 
@@ -93,25 +87,17 @@ def cross_validate_model(name: str, pipeline, X, y, save_fig: bool = True) -> di
 
 
 def _best_macro_f1_threshold(proba: np.ndarray, y) -> tuple[float, float]:
-    """Threshold on the config grid that maximises macro-F1 on OOF probabilities.
-
-    This is the *deployed objective*: main.py submits behind
-    ``TunedThresholdClassifierCV(scoring="f1_macro")``, so the honest report metrics
-    are taken at the macro-F1-optimal cut, not the arbitrary 0.5 one.
-    """
+    """Grid threshold that maximises macro-F1 on OOF probabilities (the deployed cut)."""
     f1s = [f1_score(y, (proba >= t).astype(int), average="macro") for t in config.THRESHOLDS]
     i = int(np.argmax(f1s))
     return float(config.THRESHOLDS[i]), float(f1s[i])
 
 
 def cross_validate_tuned(name: str, pipeline, X, y, save_fig: bool = True) -> dict:
-    """Like :func:`cross_validate_model` but at the tuned (deployed) threshold.
+    """Like cross_validate_model but at the macro-F1 optimal threshold (the deployed cut).
 
-    Computes OOF probabilities once, picks the macro-F1-optimal threshold, and reports
-    the confusion matrix + per-class precision/recall/F1 *there* — so the figure and
-    metrics match the operating point main.py actually submits at. ROC-AUC is
-    threshold-independent. The figure is saved as ``cm_<name>_tuned.png`` (the 0.5-cut
-    ``cm_<name>.png`` from :func:`cross_validate_model` is left untouched).
+    Reports the confusion matrix + per-class metrics there, matching what main.py submits.
+    The figure is saved as cm_<name>_tuned.png.
     """
     cv = _make_cv()
     proba = cross_val_predict(pipeline, X, y, cv=cv, method="predict_proba")[:, 1]
@@ -136,10 +122,10 @@ def cross_validate_tuned(name: str, pipeline, X, y, save_fig: bool = True) -> di
     }
 
 
-def _print_tuned_report(res: dict) -> None:
+def _print_report(res: dict, header: str, f1_line: str) -> None:
     rep = res["report"]
-    print(f"\n=== {res['name']} (tuned threshold {res['threshold']:.3f}) ===")
-    print(f"  macro-F1 : {res['macro_f1']:.4f}  (deployed objective, OOF)")
+    print(f"\n=== {header} ===")
+    print(f"  macro-F1 : {f1_line}")
     print(f"  ROC-AUC  : {res['roc_auc']:.4f}")
     for cls in CLASS_NAMES:
         m = rep[cls]
@@ -152,18 +138,17 @@ def _print_tuned_report(res: dict) -> None:
 
 
 def compare_all_tuned(X, y, models: dict | None = None) -> dict[str, dict]:
-    """Deployed-objective (tuned-threshold) comparison of the candidate baselines.
-
-    Apples-to-apples counterpart to :func:`compare_all`: every model is scored at its
-    own macro-F1-optimal threshold, which is the fair comparison given the deployed
-    threshold tuner. Produces the baseline numbers + confusion-matrix figure used in
-    the report.
-    """
+    """Tuned-threshold comparison of the candidates, the fair view given the deployed
+    threshold tuner. Produces the report's baseline + final-model numbers and figures."""
     models = models or get_candidate_models()
     results = {name: cross_validate_tuned(name, pipe, X, y) for name, pipe in models.items()}
 
     for res in results.values():
-        _print_tuned_report(res)
+        _print_report(
+            res,
+            f"{res['name']} (tuned threshold {res['threshold']:.3f})",
+            f"{res['macro_f1']:.4f}  (deployed objective, OOF)",
+        )
 
     print("\n--- Macro-F1 ranking (tuned threshold, deployed objective) ---")
     ranked = sorted(results.values(), key=lambda r: r["macro_f1"], reverse=True)
@@ -173,31 +158,17 @@ def compare_all_tuned(X, y, models: dict | None = None) -> dict[str, dict]:
     return results
 
 
-def _print_model_report(res: dict) -> None:
-    rep = res["report"]
-    print(f"\n=== {res['name']} ===")
-    print(
-        f"  macro-F1 : {res['macro_f1_mean']:.4f} +/- {res['macro_f1_std']:.4f} "
-        f"(5-fold)"
-    )
-    print(f"  ROC-AUC  : {res['roc_auc']:.4f}")
-    for cls in CLASS_NAMES:
-        m = rep[cls]
-        print(
-            f"  {cls:>16}: precision={m['precision']:.3f} "
-            f"recall={m['recall']:.3f} f1={m['f1-score']:.3f}"
-        )
-    if res["figure"]:
-        print(f"  confusion matrix saved -> {res['figure']}")
-
-
 def compare_all(X, y, models: dict | None = None) -> dict[str, dict]:
-    """Cross-validate every candidate and print a ranked macro-F1 summary."""
+    """Cross-validate every candidate at 0.5 and print a ranked macro-F1 summary."""
     models = models or get_candidate_models()
     results = {name: cross_validate_model(name, pipe, X, y) for name, pipe in models.items()}
 
     for res in results.values():
-        _print_model_report(res)
+        _print_report(
+            res,
+            res["name"],
+            f"{res['macro_f1_mean']:.4f} +/- {res['macro_f1_std']:.4f} (5-fold)",
+        )
 
     print("\n--- Macro-F1 ranking (5-fold mean) ---")
     ranked = sorted(results.values(), key=lambda r: r["macro_f1_mean"], reverse=True)

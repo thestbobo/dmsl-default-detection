@@ -1,14 +1,9 @@
-"""Imbalance-handling sweep, kept OUT of main.py.
+"""Imbalance-handling sweep, kept out of main.py.
 
-The leaderboard metric is macro-F1, so minority recall matters. We already tune
-the decision threshold, which is the safest imbalance lever. This script tests
-the next option: changing the fitted loss with 'class_weight'.
-
-Each candidate in 'config.yaml -> experiments.imbalance_configs' starts from a
-named 'model_configs' entry (usually the HGB anchor or RF) and overrides only
-estimator params. The scoring protocol is the deployed objective used everywhere
-else: OOF probabilities, best macro-F1 over the project threshold grid, then
-paired repeated-CV validation across the fixed fold seeds.
+Threshold tuning already handles the decision cut; this tests the next lever, changing
+the fitted loss with class_weight. Each candidate in experiments.imbalance_configs
+starts from a model_configs entry and overrides estimator params. Scored on the deployed
+objective with screen + paired repeated-CV, like the other sweeps.
 
 Usage:
     python experiments/imbalance_experiments.py
@@ -24,9 +19,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import numpy as np  # noqa: E402
-from sklearn.metrics import f1_score  # noqa: E402
 from sklearn.model_selection import StratifiedKFold, cross_val_predict  # noqa: E402
 
+from experiments._submit_utils import best_threshold_macro_f1, verdict  # noqa: E402
 from src import config  # noqa: E402
 from src.data import load_development, split_xy  # noqa: E402
 from src.models import make_estimator, make_pipeline  # noqa: E402
@@ -34,14 +29,6 @@ from src.models import make_estimator, make_pipeline  # noqa: E402
 ANCHOR = "hgb"
 SCREEN_SEED = config.SEED
 VALIDATION_SEEDS = config.VALIDATION_SEEDS
-MIN_DELTA = 0.005
-
-
-def best_threshold_macro_f1(proba: np.ndarray, y) -> tuple[float, float]:
-    """Best macro-F1 over the project threshold grid."""
-    f1s = [f1_score(y, (proba >= t).astype(int), average="macro") for t in config.THRESHOLDS]
-    i = int(np.argmax(f1s))
-    return float(config.THRESHOLDS[i]), float(f1s[i])
 
 
 def _merged_spec(candidate: dict) -> dict:
@@ -66,16 +53,6 @@ def oof_proba(spec: dict, X, y, seed: int) -> np.ndarray:
 
 def _score(spec: dict, X, y, seed: int) -> tuple[float, float]:
     return best_threshold_macro_f1(oof_proba(spec, X, y, seed), y)
-
-
-def _label(dmean: float, wins: int, n: int) -> str:
-    if wins == n and dmean >= MIN_DELTA:
-        return "KEEP (robust)"
-    if wins == n and dmean > 0:
-        return "keep? (robust but small)"
-    if dmean > 0:
-        return "watch (not all seeds)"
-    return "revert"
 
 
 def main() -> None:
@@ -108,7 +85,7 @@ def main() -> None:
 
     candidates = {n: s for n, s in cand_specs.items() if screened[n] > base_f1}
     if not candidates:
-        print(f"\nNothing beat the {ANCHOR} anchor at the screen seed — nothing to validate.")
+        print(f"\nNothing beat the {ANCHOR} anchor at the screen seed; nothing to validate.")
         return
 
     print(f"\n--- Paired repeated-CV validation ({len(VALIDATION_SEEDS)} seeds) vs {ANCHOR} ---")
@@ -128,7 +105,7 @@ def main() -> None:
     print(f"\n--- ranked by paired mean delta vs {ANCHOR} ---")
     for dmean, wins, name, _ in results:
         print(f"  {name:14s} dmean={dmean:+.4f}   wins {wins}/{len(VALIDATION_SEEDS)}   "
-              f"-> {_label(dmean, wins, len(VALIDATION_SEEDS))}")
+              f"-> {verdict(dmean, wins, len(VALIDATION_SEEDS))}")
 
 
 if __name__ == "__main__":

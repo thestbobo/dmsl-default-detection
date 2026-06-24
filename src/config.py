@@ -1,14 +1,6 @@
-"""Central configuration: loads 'config.yaml' and exposes the project knobs.
-
-The tunable values (seed, CV, threshold grid, column groups, the chosen
-production config, the experiment registry) live in 'config.yaml' at the repo
-root, that file is the single source of truth. This module loads it once at
-import and re-exports the values under the **same names** other modules already
-import ('config.SEED', 'config.NUMERIC', 'config.N_SPLITS', …), so nothing
-downstream changes.
-
-Things that are *code, not knobs* stay here: repo-relative paths, the
-label/id detection helpers, and 'set_seed'.
+"""Loads config.yaml once at import and re-exports the values (seed, CV, threshold
+grid, column groups, chosen config, experiment registry) under the names the rest of
+the code imports. Paths, label/id detection and set_seed live here as code, not knobs.
 """
 
 from __future__ import annotations
@@ -19,9 +11,7 @@ from pathlib import Path
 import numpy as np
 import yaml
 
-# --------------------------------------------------------------------------- #
-# Paths (anchored at the repository root, i.e. the parent of 'src/')
-# --------------------------------------------------------------------------- #
+# Paths, anchored at the repo root (parent of src/).
 ROOT = Path(__file__).resolve().parents[1]
 
 DATA_RAW = ROOT / "data" / "raw"
@@ -36,44 +26,28 @@ OUT_SUB = OUT_SUB_DIR / "submission.csv"
 
 CONFIG_YAML = ROOT / "config.yaml"
 
-# --------------------------------------------------------------------------- #
-# Load the declarative config
-# --------------------------------------------------------------------------- #
 with CONFIG_YAML.open("r") as _fh:
     _CFG = yaml.safe_load(_fh)
 
-# --------------------------------------------------------------------------- #
-# Reproducibility
-# --------------------------------------------------------------------------- #
+# Reproducibility. Estimators are seeded via random_state; this covers stdlib random
+# and the global NumPy RNG.
 SEED = int(_CFG["seed"])
 
 
 def set_seed(seed: int = SEED) -> None:
-    """Seed every source of randomness we rely on.
-
-    scikit-learn estimators are seeded explicitly via 'random_state'; this
-    covers the stdlib 'random' and global NumPy RNG for anything else.
-    """
     random.seed(seed)
     np.random.seed(seed)
 
 
-# --------------------------------------------------------------------------- #
-# Cross-validation
-# --------------------------------------------------------------------------- #
+# Cross-validation. validation_seeds are the fold seeds for paired repeated-CV checks.
 N_SPLITS = int(_CFG["cv"]["n_splits"])
-# Fold seeds for paired repeated-CV robustness checks.
 VALIDATION_SEEDS = list(_CFG["cv"]["validation_seeds"])
 
-# --------------------------------------------------------------------------- #
 # Deployed objective: threshold grid swept on OOF probabilities (macro-F1).
-# --------------------------------------------------------------------------- #
 _TG = _CFG["threshold_grid"]
 THRESHOLDS = np.linspace(float(_TG["start"]), float(_TG["stop"]), int(_TG["num"]))
 
-# --------------------------------------------------------------------------- #
-# Column groups
-# --------------------------------------------------------------------------- #
+# Column groups.
 _COLS = _CFG["columns"]
 # Categorical (nominal) features, one-hot encoded after folding undocumented codes.
 CATEGORICAL = list(_COLS["categorical"])
@@ -94,10 +68,7 @@ NUMERIC = list(_COLS["base_numeric"]) + PAY_COLS + BILL_COLS + PAY_AMT_COLS
 # Full set of feature columns the model expects (order-independent).
 FEATURE_COLS = CATEGORICAL + NUMERIC
 
-# --------------------------------------------------------------------------- #
-# Chosen production config (what main.py trains) + experiment registry
-# --------------------------------------------------------------------------- #
-# The chosen engineered-feature groups and any tuned HGB params live in config.yaml.
+# Chosen production config (what main.py trains) + experiment registry.
 CHOSEN_FEATURE_GROUPS: tuple = tuple(_CFG["chosen"].get("feature_groups") or [])
 CHOSEN_HGB_PARAMS: dict = dict(_CFG["chosen"].get("hgb_params") or {})
 # If non-empty, main.py deploys these MODEL_CONFIGS members: one entry -> that single
@@ -110,12 +81,8 @@ FEATURE_CONFIGS: dict[str, list[str]] = {
     for name, groups in (_CFG.get("experiments", {}).get("feature_configs", {}) or {}).items()
 }
 
-# --------------------------------------------------------------------------- #
-# Encoding / preprocessing knobs
-# --------------------------------------------------------------------------- #
-# Canonical shape of an encoding spec. config.yaml entries may be partial; they are
-# merged onto these defaults so every spec is complete. The defaults reproduce the
-# baseline encoding (scale on, raw columns).
+# Encoding / preprocessing knobs. config.yaml specs may be partial and are merged onto
+# these defaults, which reproduce the baseline encoding (scale on, raw columns).
 ENCODING_DEFAULTS: dict = {
     "pay_remap": False,   # fold PAY_* {-2,-1,0} -> 0 (monotone "months delinquent")
     "pay_flags": False,   # append per-month IS_DELINQ_PAY_* binaries
@@ -126,7 +93,7 @@ ENCODING_DEFAULTS: dict = {
 
 
 def normalize_encoding(spec) -> dict:
-    """Merge a (possibly partial) encoding spec onto :data:`ENCODING_DEFAULTS`."""
+    """Merge a possibly partial encoding spec onto ENCODING_DEFAULTS."""
     return {**ENCODING_DEFAULTS, **(spec or {})}
 
 
@@ -139,13 +106,8 @@ ENCODING_CONFIGS: dict[str, dict] = {
     for name, spec in (_CFG.get("experiments", {}).get("encoding_configs", {}) or {}).items()
 }
 
-# --------------------------------------------------------------------------- #
-# Model / ensemble registries
-# --------------------------------------------------------------------------- #
-# Named model specs ({kind, params, encoding-variant-name}) swept by
-# experiments/model_experiments.py; the script resolves 'kind' -> estimator class and
-# 'encoding' -> ENCODING_CONFIGS[name]. Left as raw dicts (estimator construction is
-# code, not a knob).
+# Model / ensemble registries. Named model specs ({kind, params, encoding name}) swept
+# by experiments/model_experiments.py.
 MODEL_CONFIGS: dict[str, dict] = dict(
     _CFG.get("experiments", {}).get("model_configs", {}) or {}
 )
@@ -157,31 +119,24 @@ ENSEMBLE_CONFIGS: dict[str, list[str]] = {
     for name, members in (_CFG.get("experiments", {}).get("ensemble_configs", {}) or {}).items()
 }
 
-# Named class-weight / loss-reweighting configs swept by
-# experiments/imbalance_experiments.py. Each entry points at a base MODEL_CONFIGS
-# member and overrides estimator params.
+# class_weight configs (base MODEL_CONFIGS member + param overrides) swept by
+# experiments/imbalance_experiments.py.
 IMBALANCE_CONFIGS: dict[str, dict] = dict(
     _CFG.get("experiments", {}).get("imbalance_configs", {}) or {}
 )
 
-# Named LightGBM (boosting-library) configs swept by
-# experiments/boosting_experiments.py. Same {kind, params, encoding} shape as
-# MODEL_CONFIGS; 'kind: lgbm' resolves to the lazy LGBMClassifier factory.
+# LightGBM configs swept by experiments/boosting_experiments.py (optional dependency).
 BOOSTING_CONFIGS: dict[str, dict] = dict(
     _CFG.get("experiments", {}).get("boosting_configs", {}) or {}
 )
 
-# Named resampling configs swept by experiments/resampling_experiments.py (optional
-# dependency: imbalanced-learn). Each entry: 'base_model' (a MODEL_CONFIGS name) +
-# 'sampler' (resolved to an imblearn resampler by the script).
+# Resampling configs (base_model + sampler) swept by
+# experiments/resampling_experiments.py (optional dependency: imbalanced-learn).
 RESAMPLING_CONFIGS: dict[str, dict] = dict(
     _CFG.get("experiments", {}).get("resampling_configs", {}) or {}
 )
 
-# --------------------------------------------------------------------------- #
-# Label / id detection
-# --------------------------------------------------------------------------- #
-# The development set may name the target 'label' (DSLE export) or
+# Label / id detection. The target may be named 'label' (DSLE export) or
 # 'default.payment.next.month' (original UCI naming).
 LABEL_CANDIDATES = ["label", "default.payment.next.month"]
 

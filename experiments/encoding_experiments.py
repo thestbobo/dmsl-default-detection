@@ -1,28 +1,15 @@
-"""Encoding / preprocessing sweep, kept OUT of main.py.
+"""Encoding / preprocessing sweep, kept out of main.py.
 
-A counterpart to 'feature_experiments.py'. Scores each named encoding variant from
-'config.yaml' ('experiments.encoding_configs') on the **deployed objective**, OOF
-'predict_proba' then macro-F1 at the best threshold over the grid.
-
-Every variant is screened on **two estimators**:
-
-- 'hgb'  — the tree baseline. A tree is invariant to monotone rescaling, so these
-  encodings are expected to read as noise; the point is to confirm they are neutral and
-  do NOT hurt. The 'noscale' variant must be *bit-identical* to 'baseline' here
-  (StandardScaler is a per-feature monotone map) — an explicit sanity check below.
-- 'logreg' — 'LogisticRegression(class_weight="balanced")', the linear baseline. A
-  clean ordinal scale / compressed tails help a linear model a lot, so this is where the
-  real payoff (if any) shows up.
-
-For each estimator it (1) reproduces 'baseline' as an anchor, (2) screens every other
-variant at the primary seed and prints the delta, and (3) validates the ones that beat
-baseline with paired repeated CV across the fold seeds, a real edge must win on *every*
-seed (single-seed CV gains <0.005 are noise). Estimators stay at their baseline
-hyper-parameters so the *encoding* effect is isolated.
+Counterpart to feature_experiments.py: scores each encoding variant from config.yaml
+(experiments.encoding_configs) on the deployed objective. Each variant is screened on
+two estimators, the HGB tree (a monotone rescaling is a no-op, so these should read as
+neutral) and balanced LogReg (where a clean ordinal scale can help). For each it screens
+at the primary seed, then validates the winners with paired repeated-CV across the fold
+seeds. Estimators stay at baseline hyper-parameters so the encoding effect is isolated.
 
 Usage:
     python experiments/encoding_experiments.py                  # both estimators, all variants
-    python experiments/encoding_experiments.py log1p bill_clip  # only these named variants
+    python experiments/encoding_experiments.py log1p bill_clip  # only these variants
     python experiments/encoding_experiments.py --kind logreg    # one estimator only
 """
 
@@ -39,17 +26,13 @@ from sklearn.ensemble import HistGradientBoostingClassifier  # noqa: E402
 from sklearn.linear_model import LogisticRegression  # noqa: E402
 from sklearn.model_selection import StratifiedKFold, cross_val_predict  # noqa: E402
 
+from experiments._submit_utils import best_threshold_macro_f1, verdict  # noqa: E402
 from src import config  # noqa: E402
 from src.data import load_development, split_xy  # noqa: E402
 from src.models import make_pipeline  # noqa: E402
-from experiments.tune_baseline import best_threshold_macro_f1  # noqa: E402
 
-# Screen at the primary seed; confirm any winner across all fold seeds.
 SCREEN_SEED = config.SEED
 VALIDATION_SEEDS = config.VALIDATION_SEEDS
-# A robust win must beat baseline on every seed; this much mean gain marks it a
-# real edge rather than noise.
-MIN_DELTA = 0.005
 
 # The two estimators every variant is judged on (tree baseline + linear baseline).
 KINDS = ("hgb", "logreg")
@@ -72,16 +55,6 @@ def oof_macro_f1(kind: str, encoding: dict, X, y, seed: int) -> tuple[float, flo
     cv = StratifiedKFold(n_splits=config.N_SPLITS, shuffle=True, random_state=seed)
     proba = cross_val_predict(pipe, X, y, cv=cv, method="predict_proba", n_jobs=-1)[:, 1]
     return best_threshold_macro_f1(proba, y)
-
-
-def _label(dmean: float, wins: int, n: int) -> str:
-    if wins == n and dmean >= MIN_DELTA:
-        return "KEEP (robust)"
-    if wins == n and dmean > 0:
-        return "keep? (robust but small)"
-    if dmean > 0:
-        return "watch (not all seeds)"
-    return "revert"
 
 
 def run_kind(kind: str, configs: dict[str, dict], X, y) -> None:
@@ -131,7 +104,7 @@ def run_kind(kind: str, configs: dict[str, dict], X, y) -> None:
     print(f"--- {kind}: ranked by paired mean delta vs baseline ---")
     for dmean, wins, name, _ in results:
         print(f"  {name:16s} dmean={dmean:+.4f}   wins {wins}/{len(VALIDATION_SEEDS)}   "
-              f"-> {_label(dmean, wins, len(VALIDATION_SEEDS))}")
+              f"-> {verdict(dmean, wins, len(VALIDATION_SEEDS))}")
 
 
 def main() -> None:

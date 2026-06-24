@@ -1,7 +1,8 @@
-"""Stronger boosting-library sweep, kept OUT of main.py.
+"""Stronger boosting-library sweep, kept out of main.py.
 
-The sklearn estimator space plateaued (the sweeps all moved dev CV by
-<0.005). This script tries another dependency: lightgbm + an OpenMP runtime.
+The sklearn estimator space plateaued (all sweeps moved dev CV by <0.005). This tries
+another dependency: lightgbm + an OpenMP runtime. Same deployed objective + paired
+repeated-CV as the other sweeps, vs the deployed rf_balanced champion.
 
 Usage:
     python experiments/boosting_experiments.py
@@ -17,9 +18,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import numpy as np  # noqa: E402
-from sklearn.metrics import f1_score  # noqa: E402
 from sklearn.model_selection import StratifiedKFold, cross_val_predict  # noqa: E402
 
+from experiments._submit_utils import MIN_DELTA, best_threshold_macro_f1  # noqa: E402
 from src import config  # noqa: E402
 from src.data import load_development, split_xy  # noqa: E402
 from src.models import make_estimator, make_pipeline  # noqa: E402
@@ -28,14 +29,6 @@ CHAMPION = "rf_balanced"   # the deployed model every candidate must beat
 REFERENCE = "hgb"          # printed for context (the original anchor)
 SCREEN_SEED = config.SEED
 VALIDATION_SEEDS = config.VALIDATION_SEEDS
-MIN_DELTA = 0.005          # the "transfers to the leaderboard" bar
-
-
-def best_threshold_macro_f1(proba: np.ndarray, y) -> tuple[float, float]:
-    """Best macro-F1 over the project threshold grid."""
-    f1s = [f1_score(y, (proba >= t).astype(int), average="macro") for t in config.THRESHOLDS]
-    i = int(np.argmax(f1s))
-    return float(config.THRESHOLDS[i]), float(f1s[i])
 
 
 def _resolve(name: str) -> dict:
@@ -102,7 +95,7 @@ def main() -> None:
 
     candidates = {n: s for n, s in cand_specs.items() if screened[n] > base_f1}
     if not candidates:
-        print(f"\nNothing beat the deployed {CHAMPION} at the screen seed — "
+        print(f"\nNothing beat the deployed {CHAMPION} at the screen seed: "
               f"no LB-worthy LightGBM config, dependency not justified.")
         return
 

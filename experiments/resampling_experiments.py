@@ -1,19 +1,11 @@
-"""Resampling / hybrid-sampling sweep, kept OUT of main.py.
+"""Resampling / hybrid-sampling sweep, kept out of main.py.
 
-The imbalance sweep only tried 'class_weight'; this asks whether actually
-*rebalancing the training folds* (oversampling the minority, optionally cleaning the
-boundary, e.g. SMOTE + Tomek) beats class weighting + threshold tuning on macro-F1.
-
-Optional dependency: imbalanced-learn. Installed locally only for this screen (like
-LightGBM for the boosting sweep); it is **not** added to requirements.txt unless a
-candidate clears a real leaderboard gain.
-
-Leakage safety: the sampler runs INSIDE an 'imblearn.pipeline.Pipeline', so its
-'fit_resample' only fires on the training folds during 'fit' — the held-out fold in
-'cross_val_predict' is never resampled. Because resampling does the rebalancing, the
-base estimator is the PLAIN 'rf' (no 'class_weight'), to avoid double-correcting.
-Scored on the deployed objective, screen + paired repeated-CV vs the champion
-'rf_balanced'.
+The imbalance sweep only tried class_weight; this asks whether rebalancing the training
+folds (SMOTE and hybrids) beats class weighting + threshold tuning on macro-F1. The
+sampler runs inside an imblearn Pipeline, so it only fires on the training folds during
+fit (the held-out fold is never resampled). Because resampling does the rebalancing the
+base estimator is the plain rf. Scored on the deployed objective vs the rf_balanced
+champion. Optional dependency: imbalanced-learn.
 
 Usage:
     python experiments/resampling_experiments.py
@@ -35,14 +27,13 @@ from imblearn.pipeline import Pipeline as ImbPipeline  # noqa: E402
 from imblearn.under_sampling import RandomUnderSampler, TomekLinks  # noqa: E402
 from sklearn.model_selection import StratifiedKFold, cross_val_predict  # noqa: E402
 
+from experiments._submit_utils import best_threshold_macro_f1, verdict  # noqa: E402
 from src import config  # noqa: E402
 from src.data import load_development, split_xy  # noqa: E402
 from src.models import make_estimator, make_pipeline  # noqa: E402
-from experiments.tune_baseline import best_threshold_macro_f1  # noqa: E402
 
 SCREEN_SEED = config.SEED
 VALIDATION_SEEDS = config.VALIDATION_SEEDS
-MIN_DELTA = 0.005
 ANCHOR = "rf_balanced"
 
 
@@ -85,16 +76,6 @@ def oof(pipe, X, y, seed: int) -> np.ndarray:
     return cross_val_predict(pipe, X, y, cv=cv, method="predict_proba", n_jobs=-1)[:, 1]
 
 
-def _label(dmean: float, wins: int, n: int) -> str:
-    if wins == n and dmean >= MIN_DELTA:
-        return "KEEP (robust)"
-    if wins == n and dmean > 0:
-        return "keep? (robust but small)"
-    if dmean > 0:
-        return "watch (not all seeds)"
-    return "revert"
-
-
 def main() -> None:
     config.set_seed()
 
@@ -123,7 +104,7 @@ def main() -> None:
 
     winners = [n for n in names if screened[n] > base_f1]
     if not winners:
-        print(f"\nNothing beat the {ANCHOR} champion at the screen seed — nothing to validate.")
+        print(f"\nNothing beat the {ANCHOR} champion at the screen seed; nothing to validate.")
         return
 
     print(f"\n--- Paired repeated-CV validation ({len(VALIDATION_SEEDS)} seeds) vs {ANCHOR} ---")
@@ -144,7 +125,7 @@ def main() -> None:
     print(f"\n--- ranked by paired mean delta vs {ANCHOR} ---")
     for dmean, wins, name, _ in results:
         print(f"  {name:24s} dmean={dmean:+.4f}   wins {wins}/{len(VALIDATION_SEEDS)}   "
-              f"-> {_label(dmean, wins, len(VALIDATION_SEEDS))}")
+              f"-> {verdict(dmean, wins, len(VALIDATION_SEEDS))}")
 
 
 if __name__ == "__main__":

@@ -1,12 +1,9 @@
 """Combine the two working levers (engineered features + tuned RF) and re-tune.
 
-The best features and the best hyper-parameters were found in separate runs: the
-tuned RF on raw features, the engineered features on the default rf_balanced. This
-script (a) combines them, and (b) runs a fresh randomized RF search *on the engineered
-feature set*, because the optimum shifts once the features change.
-
-All candidates are emitted as numbered submissions regardless of CV, the leaderboard
-judges.
+The best features and best hyper-parameters were found in separate runs. This combines
+them and runs a fresh randomized RF search on the engineered feature set, because the
+optimum shifts once the features change. All candidates are emitted as numbered
+submissions regardless of CV; the leaderboard judges.
 
     python experiments/feature_retune_submit.py             # combine + re-tune + submit
     python experiments/feature_retune_submit.py --no-submit # screen only
@@ -36,10 +33,7 @@ from src.models import make_estimator, make_pipeline  # noqa: E402
 NOSCALE = config.ENCODING_CONFIGS["noscale"]
 N_SEARCH = 30
 N_SUBMIT_TUNED = 3
-# Feature set the fresh RF search runs on. Default = the payratio set; override with
-# '--groups <feature_config_name>' to re-tune on another set (e.g. paysem_util_payratio).
-# '--retune-only' skips the fixed lever-multiplication combos and just runs the search
-# on --groups.
+# Feature set the fresh RF search runs on; override with --groups <feature_config_name>.
 RETUNE_GROUPS = ["payratio"]
 
 # Tuned RF parameter sets from an earlier randomized search that transferred to the LB.

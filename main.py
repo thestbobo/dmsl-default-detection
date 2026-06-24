@@ -1,16 +1,8 @@
-"""Entry point — runs the full pipeline end to end and writes submission.csv.
+"""Entry point: load data, train the chosen pipeline from scratch, write submission.csv.
 
-    load development + evaluation
-    -> preprocess + train the single chosen pipeline FROM SCRATCH
-    -> predict on the evaluation set
-    -> write outputs/submissions/submission.csv  (header: Id,Predicted)
-
-Design constraints (exam rules):
-- Must run in its entirety in <= 150 seconds.
-- No pre-computed artifacts: everything is built at runtime.
-- All randomness is seeded (see src.config.SEED).
-- Hyperparameter tuning lives in experiments/, NOT here. This script only
-  runs the one "best" configuration defined in src.models.
+Exam rules: runs end to end in under 150 s, builds everything at runtime (no cached
+artifacts), and is fully seeded. Tuning lives in experiments/; this script only runs
+the configuration selected in config.yaml / src.models.
 """
 
 from __future__ import annotations
@@ -26,9 +18,10 @@ from src.data import (
     load_development,
     load_evaluation,
     split_xy,
+    validate_submission,
+    write_submission,
 )
 from src.models import CHOSEN_MODEL_NAME, build_chosen_pipeline
-from src.submission import validate_submission, write_submission
 
 
 def main() -> None:
@@ -59,7 +52,7 @@ def main() -> None:
     threshold = getattr(model, "best_threshold_", None)
     pos = int(np.sum(preds))
     print("=" * 60)
-    print("DONE — submission written")
+    print("DONE: submission written")
     print(f"  model            : {CHOSEN_MODEL_NAME}")
     if threshold is not None:
         print(f"  tuned threshold  : {threshold:.4f} (macro-F1)")
