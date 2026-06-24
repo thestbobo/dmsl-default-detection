@@ -44,7 +44,7 @@ from sklearn.model_selection import StratifiedKFold, cross_val_predict  # noqa: 
 from src import config  # noqa: E402
 from src.data import load_development, split_xy  # noqa: E402
 from src.evaluate import compare_all, compare_all_tuned  # noqa: E402
-from src.models import make_pipeline  # noqa: E402
+from src.models import build_chosen_model, get_candidate_models, make_pipeline  # noqa: E402
 
 # Threshold grid + fold seeds come from config.yaml (defined once, project-wide).
 THRESHOLDS = config.THRESHOLDS
@@ -161,9 +161,12 @@ def main() -> None:
 
     compare_all(X, y)
     # Deployed-objective view: each baseline at its macro-F1-optimal threshold (the
-    # operating point main.py submits at). Produces the report's baseline numbers +
-    # confusion-matrix figure (outputs/figures/cm_<name>_tuned.png).
-    compare_all_tuned(X, y)
+    # operating point main.py submits at), plus the deployed model itself ("final" =
+    # config.yaml `chosen` = what main.py submits). Produces the report's baseline +
+    # final-model numbers and confusion-matrix figures (outputs/figures/cm_<name>_tuned.png,
+    # incl. cm_final_tuned.png), all at the deployed seed.
+    compare_all_tuned(X, y, models={**get_candidate_models(), "final": build_chosen_model()})
+
     tune_hgb(X, y)
 
 
