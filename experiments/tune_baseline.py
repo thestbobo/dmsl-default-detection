@@ -22,7 +22,7 @@ worse and the leaderboard score dropped (0.712 -> 0.703). Optimising the deploye
 objective fixes that mismatch; the validation step below guards against picking a
 config that only wins on a single lucky CV split.
 
-Copy the printed best parameters into ``src/models.CHOSEN_HGB_PARAMS``.
+Copy the printed best parameters into ``config.yaml`` -> ``chosen.hgb_params``.
 
 Usage:
     python experiments/tune_baseline.py
@@ -46,13 +46,13 @@ from src.data import load_development, split_xy  # noqa: E402
 from src.evaluate import compare_all  # noqa: E402
 from src.models import make_pipeline  # noqa: E402
 
-# Threshold grid swept when scoring a config (matches the deployed objective).
-THRESHOLDS = np.linspace(0.05, 0.95, 181)
+# Threshold grid + fold seeds come from config.yaml (defined once, project-wide).
+THRESHOLDS = config.THRESHOLDS
+VALIDATION_SEEDS = config.VALIDATION_SEEDS
 
 # Candidates validated with paired repeated CV before one is recommended.
 N_SEARCH = 40
 N_TOP = 6
-VALIDATION_SEEDS = [42, 1, 7, 2024, 99]
 
 
 def best_threshold_macro_f1(proba: np.ndarray, y) -> tuple[float, float]:
@@ -135,12 +135,12 @@ def validate(candidates: list[dict], X, y) -> dict:
             best_name, best_delta = name, d.mean()
 
     if best_name is None:
-        print("\n  No candidate robustly beat the defaults — keep CHOSEN_HGB_PARAMS = {}.")
+        print("\n  No candidate robustly beat the defaults — keep chosen.hgb_params = {}.")
         return {}
     chosen = dict(labelled)[best_name]
     print(f"\n  RECOMMENDED ({best_name}, +{best_delta:.4f} macro-F1 on every seed):")
     print(f"    {chosen}")
-    print("  -> paste into src/models.CHOSEN_HGB_PARAMS")
+    print("  -> paste into config.yaml: chosen.hgb_params")
     return chosen
 
 

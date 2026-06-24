@@ -33,6 +33,7 @@ pure_eval==0.2.3
 Pygments==2.20.0
 pyparsing==3.3.2
 python-dateutil==2.9.0.post0
+PyYAML==6.0.2
 pyzmq==27.1.0
 scikit-learn==1.9.0
 scipy==1.17.1
